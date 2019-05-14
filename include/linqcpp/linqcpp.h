@@ -37,10 +37,20 @@ namespace linq {
         return StdShim<P>(std::forward<P>(p));
     }
 
+    template<typename T>
+    StdShim<std::vector<T>> From(std::initializer_list<T> &&t) {
+        return From(std::vector<T>(std::forward<std::initializer_list<T>>(t)));
+    }
+
+    namespace details {
+        template<class T>
+        using optional = boost::optional<T>;
+    }
+
     ////////////////////////////////////////////////////////////////
     // Enumerator template
     ////////////////////////////////////////////////////////////////
-    template<typename P, typename T, typename V = decltype(*((typename std::remove_reference<P>::type *) nullptr)->begin())>
+    template<typename P, typename T, typename V = decltype(*std::declval<typename std::remove_reference<P>::type>().begin())>
     class Shim {
     protected:
         P _c;
@@ -63,12 +73,12 @@ namespace linq {
 
         Shim &operator=(const Shim &) = default;
 
-        explicit Shim(P &&p)
-                : _c(std::forward<P>(p)) {
+        constexpr explicit Shim(P &p)
+                : _c(p) {
         }
 
-        explicit Shim(const P &p)
-                : _c(p) {
+        constexpr explicit Shim(P &&p)
+                : _c(std::forward<P>(p)) {
         }
 
         size_t GetCapacity() {
@@ -91,7 +101,7 @@ namespace linq {
             return this->_c.begin();
         }
 
-        template<typename TI, typename I, typename IV = decltype(**(I *) nullptr)>
+        template<typename TI, typename I, typename IV = decltype(*std::declval<I>())>
         struct IteratorBase {
             using value_type = typename std::remove_reference<IV>::type;
 
@@ -148,9 +158,9 @@ namespace linq {
         public:
             template<typename I>
             struct Iterator : public IteratorBase<Iterator<I>, I> {
-                const WhereShim &_o;
+                const WhereShim *_o = nullptr;
 
-                Iterator(const I &i, const I &e, const WhereShim &o)
+                Iterator(const I &i, const I &e, const WhereShim *o)
                         : IteratorBase<Iterator<I>, I>(i, e), _o(o) {
                     _chk();
                 }
@@ -172,7 +182,7 @@ namespace linq {
                 }
 
                 void _chk() {
-                    for (; this->_i != this->_e && !_o._f(*this->_i); ++this->_i) {}
+                    for (; this->_i != this->_e && !_o->_f(*this->_i); ++this->_i) {}
                 }
             };
 
@@ -184,7 +194,7 @@ namespace linq {
 
             WhereShim(const WhereShim &) = default;
 
-            WhereShim(const T &c, const F &f)
+            WhereShim(T &c, const F &f)
                     : base(c),
                       _f(f) {
             }
@@ -194,19 +204,19 @@ namespace linq {
             WhereShim &operator=(const WhereShim &) = default;
 
             mutable_iterator end() {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
 
             mutable_iterator end() const {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() const {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
         };
 
@@ -223,9 +233,9 @@ namespace linq {
 
             template<typename I>
             struct Iterator : public IteratorBase<Iterator<I>, I, V2> {
-                const SelectShim &_o;
+                const SelectShim *_o = nullptr;
 
-                Iterator(const I &i, const I &e, const SelectShim &o)
+                Iterator(const I &i, const I &e, const SelectShim *o)
                         : IteratorBase<Iterator<I>, I, V2>(i, e), _o(o) {
                 }
 
@@ -240,7 +250,7 @@ namespace linq {
                 Iterator &operator=(const Iterator &) = default;
 
                 V2 operator*() {
-                    return _o._f(*this->_i);
+                    return _o->_f(*this->_i);
                 }
             };
 
@@ -263,19 +273,19 @@ namespace linq {
             SelectShim &operator=(const SelectShim &) = default;
 
             mutable_iterator end() {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
 
             mutable_iterator end() const {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() const {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
         };
 
@@ -292,19 +302,19 @@ namespace linq {
 
             template<typename I>
             struct Iterator : public IteratorBase<Iterator<I>, I> {
-                const SelectManyShim &_o;
+                const SelectManyShim *_o = nullptr;
 
-                typedef decltype(From(_o._f(*(value_type_t *) nullptr))) T2;
+                typedef decltype(From(_o->_f(*std::declval<I>()))) T2;
 
-                boost::optional<T2> _c2;
+                details::optional<T2> _c2;
 
-                typedef decltype(_c2->begin()) I2;
+                using I2 = decltype(_c2->begin());
 
                 I2 _i2;
                 I2 _e2;
                 bool _f = true;
 
-                Iterator(const I &i, const I &e, const SelectManyShim &o)
+                Iterator(const I &i, const I &e, const SelectManyShim *o)
                         : IteratorBase<Iterator<I>, I>(i, e), _o(o) {
                 }
 
@@ -349,7 +359,7 @@ namespace linq {
                                 break;
                             }
                         }
-                        _c2 = From(_o._f(*this->_i));
+                        _c2 = From(_o->_f(*this->_i));
                         _i2 = _c2->begin();
                         _e2 = _c2->end();
                         _f = false;
@@ -365,7 +375,7 @@ namespace linq {
 
             SelectManyShim(const SelectManyShim &) = default;
 
-            SelectManyShim(T c, const F &f)
+            SelectManyShim(T &c, const F &f)
                     : base(c),
                       _f(f) {
             }
@@ -375,19 +385,19 @@ namespace linq {
             SelectManyShim &operator=(const SelectManyShim &) = default;
 
             mutable_iterator end() {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
 
             mutable_iterator end() const {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() const {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
         };
 
@@ -476,9 +486,8 @@ namespace linq {
 
             ConcatShim(const ConcatShim &) = default;
 
-            ConcatShim(T c1, T2 &&c2)
-                    : base(c1),
-                      _c2(std::forward<T2>(c2)) {
+            ConcatShim(T &c1, T2 &&c2)
+                    : base(c1), _c2(std::forward<T2>(c2)) {
             }
 
             ConcatShim &operator=(ConcatShim &&) = default;
@@ -518,9 +527,9 @@ namespace linq {
 
             template<typename I>
             struct Iterator : public IteratorBase<Iterator<I>, I> {
-                const ExcludeShim &_o;
+                const ExcludeShim *_o = nullptr;
 
-                Iterator(const I &i, const I &e, const ExcludeShim &o)
+                Iterator(const I &i, const I &e, const ExcludeShim *o)
                         : IteratorBase<Iterator<I>, I>(i, e), _o(o) {
                     _chk();
                 }
@@ -542,7 +551,7 @@ namespace linq {
                 }
 
                 void _chk() {
-                    for (; this->_i != this->_e && _o._set.find(*this->_i) != _o._set.end(); ++this->_i) {}
+                    for (; this->_i != this->_e && _o->_set.find(*this->_i) != _o->_set.end(); ++this->_i) {}
                 }
             };
 
@@ -555,7 +564,7 @@ namespace linq {
             ExcludeShim(const ExcludeShim &) = default;
 
             template<typename T2>
-            ExcludeShim(T c1, const T2 &c2)
+            ExcludeShim(T &c1, const T2 &c2)
                     : base(c1) {
                 for (const auto &it: c2) {
                     _set.insert(it);
@@ -567,19 +576,19 @@ namespace linq {
             ExcludeShim &operator=(const ExcludeShim &) = default;
 
             mutable_iterator end() {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
 
             mutable_iterator end() const {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() const {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
         };
 
@@ -623,7 +632,7 @@ namespace linq {
 
             CastShim(const CastShim &) = default;
 
-            CastShim(T c)
+            CastShim(T &c)
                     : base(c) {
             }
 
@@ -660,9 +669,9 @@ namespace linq {
 
             template<typename I>
             struct Iterator : public IteratorBase<Iterator<I>, I> {
-                const IntersectShim &_o;
+                const IntersectShim *_o = nullptr;
 
-                Iterator(const I &i, const I &e, const IntersectShim &o)
+                Iterator(const I &i, const I &e, const IntersectShim *o)
                         : IteratorBase<Iterator<I>, I>(i, e), _o(o) {
                     _chk();
                 }
@@ -684,7 +693,7 @@ namespace linq {
                 }
 
                 void _chk() {
-                    for (; this->_i != this->_e && _o._set.find(*this->_i) == _o._set.end(); ++this->_i) {}
+                    for (; this->_i != this->_e && _o->_set.find(*this->_i) == _o->_set.end(); ++this->_i) {}
                 }
             };
 
@@ -697,7 +706,7 @@ namespace linq {
             IntersectShim(const IntersectShim &) = default;
 
             template<typename T2>
-            IntersectShim(T c1, const T2 &c2)
+            IntersectShim(T &c1, const T2 &c2)
                     : base(c1) {
                 for (const auto &it: c2) {
                     _set.insert(it);
@@ -709,19 +718,19 @@ namespace linq {
             IntersectShim &operator=(const IntersectShim &) = default;
 
             mutable_iterator end() {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
 
             mutable_iterator end() const {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() const {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
         };
 
@@ -738,7 +747,7 @@ namespace linq {
             struct Iterator : public IteratorBase<Iterator<I>, I> {
                 using base = IteratorBase<Iterator<I>, I>;
 
-                const ThrottleShim &_o;
+                const ThrottleShim *_o = nullptr;
 
 //                struct ThrottleItem {
 //                    struct IteratorItem : public IteratorBase<IteratorItem, I> {
@@ -797,7 +806,7 @@ namespace linq {
 //                    }
 //                };
 
-                Iterator(const I &i, const I &e, const ThrottleShim &o)
+                Iterator(const I &i, const I &e, const ThrottleShim *o)
                         : base(i, e), _o(o) {
                 }
 
@@ -812,15 +821,15 @@ namespace linq {
                 Iterator &operator=(const Iterator &) = default;
 
                 Iterator operator++() {
-                    for (auto v = _o._v; base::_i != base::_e && v > 0; ++base::_i, --v) {}
+                    for (auto v = _o->_v; base::_i != base::_e && v > 0; ++base::_i, --v) {}
                     return *this;
                 }
 
                 std::vector<value_type_t> operator*() {
                     std::vector<value_type_t> ret;
-                    ret.reserve(_o._v);
+                    ret.reserve(_o->_v);
                     auto i = base::_i;
-                    for (auto v = _o._v; i != base::_e && v > 0; ++i, --v) {
+                    for (auto v = _o->_v; i != base::_e && v > 0; ++i, --v) {
                         ret.push_back(*i);
                     }
                     return ret;
@@ -835,7 +844,7 @@ namespace linq {
 
             ThrottleShim(const ThrottleShim &) = default;
 
-            ThrottleShim(const T &c, size_t v)
+            ThrottleShim(T &c, size_t v)
                     : base(c),
                       _v(v) {
             }
@@ -845,19 +854,19 @@ namespace linq {
             ThrottleShim &operator=(const ThrottleShim &) = default;
 
             mutable_iterator end() {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
 
             mutable_iterator end() const {
-                return mutable_iterator(this->_c.end(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.end(), this->_c.end(), this);
             }
 
             mutable_iterator begin() const {
-                return mutable_iterator(this->_c.begin(), this->_c.end(), *this);
+                return mutable_iterator(this->_c.begin(), this->_c.end(), this);
             }
         };
 
@@ -865,38 +874,60 @@ namespace linq {
             return ThrottleShim(*(T *) this, value);
         }
 
+        WhereShim<std::function<bool(const value_type_t &)>> Skip(size_t c) {
+            return this->Where(std::function<bool(const value_type_t &)>(
+                    [=](const value_type_t &) mutable {
+                        if (c == 0) {
+                            return true;
+                        }
+                        --c;
+                        return false;
+                    }));
+        }
+
+        WhereShim<std::function<bool(const value_type_t &)>> Take(size_t c) {
+            return this->Where(std::function<bool(const value_type_t &)>(
+                    [=](const value_type_t &) mutable {
+                        if (c == 0) {
+                            return false;
+                        }
+                        --c;
+                        return true;
+                    }));
+        }
+
         template<typename VT = value_type_t>
-        boost::optional<VT> FirstOrNone() {
+        details::optional<VT> FirstOrNone() {
             auto _this = (T *) this;
             auto ret = _this->begin();
             if (ret == _this->end()) {
-                return boost::optional<VT>();
+                return details::optional<VT>();
             }
             return *ret;
         }
 
         template<typename VT = value_type_t, typename F>
-        boost::optional<VT> FirstOrNone(const F &f) {
+        details::optional<VT> FirstOrNone(const F &f) {
             auto _this = (T *) this;
             return _this->template Where(f).
                     template FirstOrNone<VT>();
         }
 
         template<typename VT = value_type_t>
-        boost::optional<VT> LastOrNone() {
+        details::optional<VT> LastOrNone() {
             auto _this = (T *) this;
             auto ret = _this->begin();
             for (auto it = ret; it != _this->end(); ++it) {
                 ret = it;
             }
             if (ret == _this->end()) {
-                return boost::optional<VT>();
+                return details::optional<VT>();
             }
             return *ret;
         }
 
         template<typename VT = value_type_t, typename F>
-        boost::optional<VT> LastOrNone(const F &f) {
+        details::optional<VT> LastOrNone(const F &f) {
             auto _this = (T *) this;
             return _this->template Where(f).
                     template LastOrNone<VT>();
@@ -953,9 +984,9 @@ namespace linq {
             return ret;
         }
 
-        boost::optional<value_type_t> MinOrNone() {
+        details::optional<value_type_t> MinOrNone() {
             auto _this = (T *) this;
-            boost::optional<value_type_t> ret;
+            details::optional<value_type_t> ret;
 
             for (const auto &it: *_this) {
                 if (!ret || *ret > it) {
@@ -973,9 +1004,9 @@ namespace linq {
             return *ret;
         }
 
-        boost::optional<value_type_t> MaxOrNone() {
+        details::optional<value_type_t> MaxOrNone() {
             auto _this = (T *) this;
-            boost::optional<value_type_t> ret;
+            details::optional<value_type_t> ret;
 
             for (const auto &it: *_this) {
                 if (!ret || *ret < it) {
@@ -1059,7 +1090,14 @@ namespace linq {
             return ret;
         }
 
-        std::vector<value_type_t> ToOrderedVector(size_t n = 0) {
+        std::vector<value_type_t> ToOrderedVector() {
+            auto _this = (T *) this;
+            auto ret = _this->ToVector();
+            std::sort(ret.begin(), ret.end());
+            return ret;
+        }
+
+        std::vector<value_type_t> ToOrderedVector(size_t n) {
             auto _this = (T *) this;
             auto ret = _this->ToVector(n);
             std::sort(ret.begin(), ret.end());
@@ -1067,7 +1105,15 @@ namespace linq {
         }
 
         template<typename F>
-        std::vector<value_type_t> ToOrderedVector(F f, size_t n = 0) {
+        std::vector<value_type_t> ToOrderedVector(F f) {
+            auto _this = (T *) this;
+            auto ret = _this->ToVector();
+            std::sort(ret.begin(), ret.end(), f);
+            return ret;
+        }
+
+        template<typename F>
+        std::vector<value_type_t> ToOrderedVector(F f, size_t n) {
             auto _this = (T *) this;
             auto ret = _this->ToVector(n);
             std::sort(ret.begin(), ret.end(), f);
@@ -1172,10 +1218,14 @@ namespace linq {
 
     template<typename P>
     struct _shared_getter<P &> {
-        P &_p;
+        P *_p = nullptr;
 
         explicit _shared_getter(P &p)
-                : _p(p) {
+                : _p(&p) {
+        }
+
+        ~_shared_getter() {
+            _p = nullptr;
         }
 
         _shared_getter(_shared_getter &&) = default;
@@ -1187,23 +1237,23 @@ namespace linq {
         _shared_getter &operator=(const _shared_getter &) = default;
 
         size_t GetCapacity() {
-            return details::GetCapacity(_p);
+            return details::GetCapacity(*_p);
         }
 
-        auto end() -> decltype(_p.end()) {
-            return _p.end();
+        auto end() -> decltype(_p->end()) {
+            return _p->end();
         }
 
-        auto begin() -> decltype(_p.begin()) {
-            return _p.begin();
+        auto begin() -> decltype(_p->begin()) {
+            return _p->begin();
         }
 
-        auto end() const -> decltype(_p.end()) {
-            return _p.end();
+        auto end() const -> decltype(_p->end()) {
+            return _p->end();
         }
 
-        auto begin() const -> decltype(_p.begin()) {
-            return _p.begin();
+        auto begin() const -> decltype(_p->begin()) {
+            return _p->begin();
         }
     };
 
@@ -1214,7 +1264,7 @@ namespace linq {
         StdShim() = default;
 
         explicit StdShim(P &&p)
-                : base(std::move(_shared_getter<P>(std::forward<P>(p)))) {
+                : base(_shared_getter<P>(std::forward<P>(p))) {
         }
 
         StdShim(StdShim &&) = default;
@@ -1228,9 +1278,9 @@ namespace linq {
 
     template<typename I>
     struct ItShim {
-        typedef I iterator;
-        typedef I const_iterator;
-        typedef typename I::value_type value_type;
+        using iterator = I;
+        using const_iterator = I;
+        using value_type = decltype(*std::declval<I>());
 
         I _b;
         I _e;
@@ -1260,6 +1310,7 @@ namespace linq {
         return From(std::move(s));
     }
 
+    // used only for tests!!!
     template<typename T>
     StdShim<std::vector<T>> Move(std::initializer_list<T> &&t) {
         std::vector<T> vec(t.size());
