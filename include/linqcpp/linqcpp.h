@@ -45,6 +45,47 @@ namespace linq {
     namespace details {
         template<class T>
         using optional = boost::optional<T>;
+
+        template<typename P>
+        size_t GetCapacity(const P &) {
+            return 0;
+        }
+
+        template<typename T>
+        size_t GetCapacity(const std::list<T> &l) {
+            return l.size();
+        }
+
+        template<typename T>
+        size_t GetCapacity(const std::vector<T> &v) {
+            return v.size();
+        }
+
+        template<typename T>
+        size_t GetCapacity(const std::unordered_set<T> &s) {
+            return s.size();
+        }
+
+        template<typename K, typename T>
+        size_t GetCapacity(const std::unordered_map<K, T> &m) {
+            return m.size();
+        }
+
+        template<typename T>
+        struct Container {
+            template<typename T2>
+            static constexpr auto Get(T2 &t) -> T2 & {
+                return t;
+            }
+        };
+
+        template<typename T>
+        struct Container<std::reference_wrapper<T>> {
+            template<typename T2>
+            static constexpr auto Get(T2 &t) -> decltype(t.get()) {
+                return t.get();
+            }
+        };
     }
 
     ////////////////////////////////////////////////////////////////
@@ -1151,34 +1192,6 @@ namespace linq {
         }
     };
 
-    namespace details {
-
-        template<typename P>
-        size_t GetCapacity(const P &) {
-            return 0;
-        }
-
-        template<typename T>
-        size_t GetCapacity(const std::list<T> &l) {
-            return l.size();
-        }
-
-        template<typename T>
-        size_t GetCapacity(const std::vector<T> &v) {
-            return v.size();
-        }
-
-        template<typename T>
-        size_t GetCapacity(const std::unordered_set<T> &s) {
-            return s.size();
-        }
-
-        template<typename K, typename T>
-        size_t GetCapacity(const std::unordered_map<K, T> &m) {
-            return m.size();
-        }
-    }
-
     template<typename P>
     struct _shared_getter {
         std::shared_ptr<P> _p;
@@ -1196,23 +1209,23 @@ namespace linq {
         _shared_getter &operator=(const _shared_getter &) = default;
 
         size_t GetCapacity() {
-            return details::GetCapacity(*_p);
+            return details::GetCapacity(details::Container<P>::Get(*_p));
         }
 
-        auto end() -> decltype(_p->end()) {
-            return _p->end();
+        auto end() -> decltype(std::end(details::Container<P>::Get(*_p))) {
+            return std::end(details::Container<P>::Get(*_p));
         }
 
-        auto begin() -> decltype(_p->begin()) {
-            return _p->begin();
+        auto begin() -> decltype(std::begin(details::Container<P>::Get(*_p))) {
+            return std::begin(details::Container<P>::Get(*_p));
         }
 
-        auto end() const -> decltype(_p->end()) {
-            return _p->end();
+        auto end() const -> decltype(std::end(details::Container<P>::Get(*_p))) {
+            return std::end(details::Container<P>::Get(*_p));
         }
 
-        auto begin() const -> decltype(_p->begin()) {
-            return _p->begin();
+        auto begin() const -> decltype(std::begin(details::Container<P>::Get(*_p))) {
+            return std::begin(details::Container<P>::Get(*_p));
         }
     };
 
@@ -1237,23 +1250,23 @@ namespace linq {
         _shared_getter &operator=(const _shared_getter &) = default;
 
         size_t GetCapacity() {
-            return details::GetCapacity(*_p);
+            return details::GetCapacity(details::Container<P>::Get(*_p));
         }
 
-        auto end() -> decltype(_p->end()) {
-            return _p->end();
+        auto end() -> decltype(std::end(details::Container<P>::Get(*_p))) {
+            return std::end(details::Container<P>::Get(*_p));
         }
 
-        auto begin() -> decltype(_p->begin()) {
-            return _p->begin();
+        auto begin() -> decltype(std::begin(details::Container<P>::Get(*_p))) {
+            return std::begin(details::Container<P>::Get(*_p));
         }
 
-        auto end() const -> decltype(_p->end()) {
-            return _p->end();
+        auto end() const -> decltype(std::end(details::Container<P>::Get(*_p))) {
+            return std::end(details::Container<P>::Get(*_p));
         }
 
-        auto begin() const -> decltype(_p->begin()) {
-            return _p->begin();
+        auto begin() const -> decltype(std::begin(details::Container<P>::Get(*_p))) {
+            return std::begin(details::Container<P>::Get(*_p));
         }
     };
 
