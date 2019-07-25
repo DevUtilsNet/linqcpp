@@ -47,27 +47,27 @@ namespace linq {
         using optional = boost::optional<T>;
 
         template<typename P>
-        size_t GetCapacity(const P &) {
+        size_t get_capacity(const P &) {
             return 0;
         }
 
         template<typename T>
-        size_t GetCapacity(const std::list<T> &l) {
+        size_t get_capacity(const std::list<T> &l) {
             return l.size();
         }
 
         template<typename T>
-        size_t GetCapacity(const std::vector<T> &v) {
+        size_t get_capacity(const std::vector<T> &v) {
             return v.size();
         }
 
         template<typename T>
-        size_t GetCapacity(const std::unordered_set<T> &s) {
+        size_t get_capacity(const std::unordered_set<T> &s) {
             return s.size();
         }
 
         template<typename K, typename T>
-        size_t GetCapacity(const std::unordered_map<K, T> &m) {
+        size_t get_capacity(const std::unordered_map<K, T> &m) {
             return m.size();
         }
 
@@ -88,6 +88,9 @@ namespace linq {
         };
     }
 
+    template<typename I>
+    class ITearOffContainer;
+
     ////////////////////////////////////////////////////////////////
     // Enumerator template
     ////////////////////////////////////////////////////////////////
@@ -96,6 +99,8 @@ namespace linq {
     protected:
         P _c;
     public:
+        constexpr static bool shared = P::shared;
+
         typedef V value_type;
         typedef decltype(((typename std::remove_reference<P>::type *) nullptr)->begin()) mutable_iterator;
 
@@ -103,16 +108,6 @@ namespace linq {
         typedef mutable_iterator const_iterator;
 
         typedef typename std::remove_const<typename std::remove_reference<value_type>::type>::type value_type_t;
-
-        Shim() = default;
-
-        Shim(Shim &&) = default;
-
-        Shim(const Shim &) = default;
-
-        Shim &operator=(Shim &&) = default;
-
-        Shim &operator=(const Shim &) = default;
 
         constexpr explicit Shim(P &p)
                 : _c(p) {
@@ -122,8 +117,8 @@ namespace linq {
                 : _c(std::forward<P>(p)) {
         }
 
-        size_t GetCapacity() {
-            return _c.GetCapacity();
+        size_t get_capacity() {
+            return _c.get_capacity();
         }
 
         auto end() -> decltype(this->_c.end()) {
@@ -291,6 +286,10 @@ namespace linq {
                 Iterator &operator=(const Iterator &) = default;
 
                 V2 operator*() {
+                    return _o->_f(*this->_i);
+                }
+
+                V2 operator*() const {
                     return _o->_f(*this->_i);
                 }
             };
@@ -535,8 +534,8 @@ namespace linq {
 
             ConcatShim &operator=(const ConcatShim &) = default;
 
-            size_t GetCapacity() {
-                return base::GetCapacity() + _c2.GetCapacity();
+            size_t get_capacity() {
+                return base::get_capacity() + _c2.get_capacity();
             }
 
             mutable_iterator begin() {
@@ -1090,6 +1089,19 @@ namespace linq {
             return false;
         }
 
+        template<typename C>
+        bool IsIntersect(C c) {
+            auto _this = (T *) this;
+            for (const auto &it1: *_this) {
+                for (auto &it2: c) {
+                    if (it1 == it2) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         template<typename F>
         bool All(F f) {
             auto _this = (T *) this;
@@ -1119,7 +1131,7 @@ namespace linq {
 
         std::vector<value_type_t> ToVector() {
             std::vector<value_type_t> ret;
-            ret.reserve(GetCapacity());
+            ret.reserve(get_capacity());
             ToVector(ret);
             return ret;
         }
@@ -1190,11 +1202,15 @@ namespace linq {
             auto _this = (T *) this;
             return _this->template Select<K>(f).ToUnorderedSet();
         }
+
+        std::shared_ptr<ITearOffContainer<value_type>> AsTearOffContainer();
     };
 
     template<typename P>
     struct _shared_getter {
         std::shared_ptr<P> _p;
+
+        constexpr static bool shared = true;
 
         explicit _shared_getter(P &&p)
                 : _p(std::make_shared<P>(std::forward<P>(p))) {
@@ -1208,8 +1224,8 @@ namespace linq {
 
         _shared_getter &operator=(const _shared_getter &) = default;
 
-        size_t GetCapacity() {
-            return details::GetCapacity(details::Container<P>::Get(*_p));
+        size_t get_capacity() {
+            return details::get_capacity(details::Container<P>::Get(*_p));
         }
 
         auto end() -> decltype(std::end(details::Container<P>::Get(*_p))) {
@@ -1233,6 +1249,8 @@ namespace linq {
     struct _shared_getter<P &> {
         P *_p = nullptr;
 
+        constexpr static bool shared = false;
+
         explicit _shared_getter(P &p)
                 : _p(&p) {
         }
@@ -1249,8 +1267,8 @@ namespace linq {
 
         _shared_getter &operator=(const _shared_getter &) = default;
 
-        size_t GetCapacity() {
-            return details::GetCapacity(details::Container<P>::Get(*_p));
+        size_t get_capacity() {
+            return details::get_capacity(details::Container<P>::Get(*_p));
         }
 
         auto end() -> decltype(std::end(details::Container<P>::Get(*_p))) {
