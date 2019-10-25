@@ -343,9 +343,11 @@ struct Shim : public P {
     template <typename P2>
     const Shim<ConcatShim<P2>> Concat(P2&& p) const { return Shim<ConcatShim<P2>> { { { *this }, std::forward<P2>(p) } }; }
 
+    template <typename F>
     struct ExcludeShim : public LoShim {
         using base = LoShim;
-        std::unordered_set<value_type> _set;
+        std::unordered_set<std::result_of_t<F(value_type)>> _set;
+        F _f;
         template <typename I>
         struct Iterator : public LoIterator2<Iterator<I>, I> {
             using base = LoIterator2<Iterator, I>;
@@ -359,7 +361,7 @@ struct Shim : public P {
             }
             bool _chk()
             {
-                for (; base::_i != base::_e && _o->_set.find(*base::_i) != _o->_set.end(); ++base::_i) {
+                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) != _o->_set.end(); ++base::_i) {
                 }
                 return true;
             }
@@ -367,10 +369,79 @@ struct Shim : public P {
         using iterator = Iterator<typename base::iterator>;
         using const_iterator = Iterator<typename base::const_iterator>;
     };
+    template <typename P2, typename F>
+    Shim<HiShim2<ExcludeShim<F>>> Exclude(P2&& p, F&& f)
+    {
+        return Shim<HiShim2<ExcludeShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+    }
+    template <typename P2, typename F>
+    const Shim<HiShim2<ExcludeShim<F>>> Exclude(P2&& p, F&& f) const
+    {
+        return Shim<HiShim2<ExcludeShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+    }
+    struct _ExcludeFunctor {
+        value_type_t operator()(const value_type& v) const { return v; }
+    };
     template <typename P2>
-    Shim<HiShim2<ExcludeShim>> Exclude(const P2& p) { return Shim<HiShim2<ExcludeShim>> { { { { *this }, From(p).ToUnorderedSet() } } }; }
+    Shim<HiShim2<ExcludeShim<_ExcludeFunctor>>> Exclude(P2&& p)
+    {
+        return Exclude(p, _ExcludeFunctor { _ExcludeFunctor {} });
+    }
     template <typename P2>
-    const Shim<HiShim2<ExcludeShim>> Exclude(const P2& p) const { return Shim<HiShim2<ExcludeShim>> { { { { *this }, From(p).ToUnorderedSet() } } }; }
+    const Shim<HiShim2<ExcludeShim<_ExcludeFunctor>>> Exclude(P2&& p) const
+    {
+        return Exclude(p, _ExcludeFunctor { _ExcludeFunctor {} });
+    }
+
+    template <typename F>
+    struct IntersectShim : public LoShim {
+        using base = LoShim;
+        std::unordered_set<value_type> _set;
+        F _f;
+        template <typename I>
+        struct Iterator : public LoIterator2<Iterator<I>, I> {
+            using base = LoIterator2<Iterator<I>, I>;
+            const IntersectShim* _o = nullptr;
+            bool _init = _chk();
+            Iterator& operator++()
+            {
+                base::operator++();
+                _chk();
+                return *this;
+            }
+            bool _chk()
+            {
+                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) == _o->_set.end(); ++base::_i) {
+                }
+                return true;
+            }
+        };
+        using iterator = Iterator<typename base::iterator>;
+        using const_iterator = Iterator<typename base::const_iterator>;
+    };
+    template <typename P2, typename F>
+    Shim<HiShim2<IntersectShim<F>>> Intersect(P2&& p, F&& f)
+    {
+        return Shim<HiShim2<IntersectShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+    }
+    template <typename P2, typename F>
+    const Shim<HiShim2<IntersectShim<F>>> Intersect(P2&& p, F&& f) const
+    {
+        return Shim<HiShim2<IntersectShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+    }
+    struct _IntersectFunctor {
+        value_type_t operator()(const value_type& v) const { return v; }
+    };
+    template <typename P2>
+    Shim<HiShim2<IntersectShim<_IntersectFunctor>>> Intersect(P2&& p)
+    {
+        return Intersect(p, _IntersectFunctor { _IntersectFunctor {} });
+    }
+    template <typename P2>
+    const Shim<HiShim2<IntersectShim<_IntersectFunctor>>> Intersect(P2&& p) const
+    {
+        return Intersect(p, _IntersectFunctor { _IntersectFunctor {} });
+    }
 
     template <typename V2>
     struct CastShim : public LoShim {
@@ -393,35 +464,6 @@ struct Shim : public P {
     Shim<HiShim1<CastShim<V2>>> Cast() { return Shim<HiShim1<CastShim<V2>>> { { { { *this } } } }; }
     template <typename V2>
     const Shim<HiShim1<CastShim<V2>>> Cast() const { return Shim<HiShim1<CastShim<V2>>> { { { { *this } } } }; }
-
-    struct IntersectShim : public LoShim {
-        using base = LoShim;
-        std::unordered_set<value_type> _set;
-        template <typename I>
-        struct Iterator : public LoIterator2<Iterator<I>, I> {
-            using base = LoIterator2<Iterator<I>, I>;
-            const IntersectShim* _o = nullptr;
-            bool _init = _chk();
-            Iterator& operator++()
-            {
-                base::operator++();
-                _chk();
-                return *this;
-            }
-            bool _chk()
-            {
-                for (; base::_i != base::_e && _o->_set.find(*base::_i) == _o->_set.end(); ++base::_i) {
-                }
-                return true;
-            }
-        };
-        using iterator = Iterator<typename base::iterator>;
-        using const_iterator = Iterator<typename base::const_iterator>;
-    };
-    template <typename P2>
-    Shim<HiShim2<IntersectShim>> Intersect(const P2& p) { return Shim<HiShim2<IntersectShim>> { { { { *this }, From(p).ToUnorderedSet() } } }; }
-    template <typename P2>
-    const Shim<HiShim2<IntersectShim>> Intersect(const P2& p) const { return Shim<HiShim2<IntersectShim>> { { { { *this }, From(p).ToUnorderedSet() } } }; }
 
     struct TakeShim : public LoShim {
         using base = LoShim;
@@ -497,25 +539,32 @@ struct Shim : public P {
     Shim<HiShim2<DistinctShim<F>>> Distinct(F&& f) { return Shim<HiShim2<DistinctShim<F>>> { { { { *this }, std::forward<F>(f) } } }; }
     template <typename F>
     const Shim<HiShim2<DistinctShim<F>>> Distinct(F&& f) const { return Shim<HiShim2<DistinctShim<F>>> { { { { *this }, std::forward<F>(f) } } }; }
-    Shim<HiShim2<DistinctShim<std::function<value_type_t(const value_type&)>>>> Distinct()
+    struct _DistinctFunctor {
+        value_type_t operator()(const value_type& v) const { return v; }
+    };
+    Shim<HiShim2<DistinctShim<_DistinctFunctor>>> Distinct()
     {
-        return Distinct(std::function<value_type_t(const value_type&)> { [](const value_type& v) { return v; } });
+        return Distinct(_DistinctFunctor { _DistinctFunctor {} });
     }
-    const Shim<HiShim2<DistinctShim<std::function<value_type_t(const value_type&)>>>> Distinct() const
+    const Shim<HiShim2<DistinctShim<_DistinctFunctor>>> Distinct() const
     {
-        return Distinct(std::function<value_type_t(const value_type&)> { [](const value_type& v) { return v; } });
+        return Distinct(_DistinctFunctor { _DistinctFunctor {} });
     }
 
-    Shim<HiShim2<WhereShim<std::function<bool(const value_type&)>>>> Skip(size_t c) const
+    struct _SkipFunctor {
+        mutable size_t _c;
+        bool operator()(const value_type&) const
+        {
+            if (_c == 0) {
+                return true;
+            }
+            --_c;
+            return false;
+        }
+    };
+    Shim<HiShim2<WhereShim<_SkipFunctor>>> Skip(size_t c) const
     {
-        return this->Where(std::function<bool(const value_type&)>(
-            [=](const value_type&) mutable {
-                if (c == 0) {
-                    return true;
-                }
-                --c;
-                return false;
-            }));
+        return this->Where(_SkipFunctor { c });
     }
 
     template <typename VT = value_type>
@@ -739,8 +788,8 @@ struct Shim : public P {
     {
         std::list<value_type> ret;
         auto _this = this;
-        for (const auto& it : *_this) {
-            ret.push_back(it);
+        for (auto&& it : *_this) {
+            ret.emplace_back(it);
         }
         return ret;
     }
@@ -748,8 +797,8 @@ struct Shim : public P {
     void ToVector(std::vector<value_type>& v)
     {
         auto _this = this;
-        for (const auto& it : *_this) {
-            v.push_back(it);
+        for (auto&& it : *_this) {
+            v.emplace_back(it);
         }
     }
 
@@ -764,8 +813,8 @@ struct Shim : public P {
     void ToVector(std::vector<value_type>& v) const
     {
         auto _this = this;
-        for (const auto& it : *_this) {
-            v.push_back(it);
+        for (auto&& it : *_this) {
+            v.emplace_back(it);
         }
     }
 
@@ -840,14 +889,14 @@ struct Shim : public P {
     {
         std::unordered_set<value_type> ret;
         auto _this = this;
-        for (const auto& it : *_this) {
-            ret.insert(it);
+        for (auto&& it : *_this) {
+            ret.emplace(it);
         }
         return ret;
     }
 
     template <typename K, typename F>
-    std::unordered_set<K> ToUnorderedSet(const F& f)
+    std::unordered_set<K> ToUnorderedSet(F&& f)
     {
         auto _this = this;
         return _this->template Select<K>(f).ToUnorderedSet();
@@ -857,17 +906,26 @@ struct Shim : public P {
     {
         std::unordered_set<value_type> ret;
         auto _this = this;
-        for (const auto& it : *_this) {
-            ret.insert(it);
+        for (auto&& it : *_this) {
+            ret.emplace(it);
         }
         return ret;
     }
 
     template <typename K, typename F>
-    std::unordered_set<K> ToUnorderedSet(const F& f) const
+    std::unordered_set<K> ToUnorderedSet(F&& f) const
     {
         auto _this = this;
         return _this->template Select<K>(f).ToUnorderedSet();
+    }
+
+    struct _MoveFunctor {
+        value_type_t operator()(value_type& v) const { return std::move(v); }
+        value_type_t operator()(value_type&& v) const { return std::move(v); }
+    };
+    Shim<HiShim11<SelectShim<value_type_t, _MoveFunctor>>> Move()
+    {
+        return Shim<HiShim11<SelectShim<value_type_t, _MoveFunctor>>> { { { { *this }, _MoveFunctor {} } } };
     }
 
     std::shared_ptr<ITearOffContainer<value_type>> AsTearOffContainer();
