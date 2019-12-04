@@ -45,9 +45,9 @@ template <typename P>
 StdShim<const P&> From(const P& p) { return StdShim<const P&> { { _shared_getter<const P&> { p } } }; }
 
 template <typename T>
-StdShim<std::vector<T>> From(std::initializer_list<T>&& t)
+StdShim<std::vector<T>> From(const std::initializer_list<T>& t)
 {
-    return From(std::vector<T>(std::forward<std::initializer_list<T>>(t)));
+    return From(std::vector<T>(t));
 }
 
 namespace details {
@@ -83,15 +83,15 @@ class ITearOffContainer;
 template <typename P>
 struct Shim : public P {
     using value_type = typename P::value_type;
-    using value_type_t = std::remove_const_t<std::remove_reference_t<std::remove_const_t<value_type>>>;
+    using value_type_t = std::remove_const_t<std::remove_reference_t<value_type>>;
 
     template <typename I1, typename I2>
     struct LoIterator1 {
-        using pointer = typename I2::pointer;
-        using reference = typename I2::reference;
-        using value_type = typename I2::value_type;
         using iterator_category = std::forward_iterator_tag;
-        using difference_type = typename I2::difference_type;
+        using pointer = typename std::iterator_traits<I2>::pointer;
+        using reference = typename std::iterator_traits<I2>::reference;
+        using value_type = typename std::iterator_traits<I2>::value_type;
+        using difference_type = typename std::iterator_traits<I2>::difference_type;
         mutable I2 _i;
         I1& operator++()
         {
@@ -118,7 +118,7 @@ struct Shim : public P {
     struct LoShim {
         P _p;
         constexpr static bool shared = P::shared;
-        using iterator = decltype(_p.begin());
+        using iterator = decltype(std::begin(_p));
         using value_type = typename P::value_type;
         using const_iterator = typename P::const_iterator;
         size_t get_capacity() const { return _p.get_capacity(); }
@@ -128,40 +128,40 @@ struct Shim : public P {
     struct HiShim1 : public P2 {
         using iterator = typename P2::iterator;
         using const_iterator = typename P2::const_iterator;
-        iterator end() { return { { this->_p.end() } }; }
-        iterator begin() { return { { this->_p.begin() } }; }
-        const_iterator end() const { return { { this->_p.end() } }; }
-        const_iterator begin() const { return { { this->_p.begin() } }; }
+        iterator end() { return { { std::end(this->_p) } }; }
+        iterator begin() { return { { std::begin(this->_p) } }; }
+        const_iterator end() const { return { { std::end(this->_p) } }; }
+        const_iterator begin() const { return { { std::begin(this->_p) } }; }
     };
 
     template <typename P2>
     struct HiShim11 : public P2 {
         using iterator = typename P2::iterator;
         using const_iterator = typename P2::const_iterator;
-        iterator end() { return { { this->_p.end() }, this }; }
-        iterator begin() { return { { this->_p.begin() }, this }; }
-        const_iterator end() const { return { { this->_p.end() }, this }; }
-        const_iterator begin() const { return { { this->_p.begin() }, this }; }
+        iterator end() { return { { std::end(this->_p) }, this }; }
+        iterator begin() { return { { std::begin(this->_p) }, this }; }
+        const_iterator end() const { return { { std::end(this->_p) }, this }; }
+        const_iterator begin() const { return { { std::begin(this->_p) }, this }; }
     };
 
     template <typename P2>
     struct HiShim2 : public P2 {
         using iterator = typename P2::iterator;
         using const_iterator = typename P2::const_iterator;
-        iterator end() { return { { { this->_p.end() }, this->_p.end() }, this }; }
-        iterator begin() { return { { { this->_p.begin() }, this->_p.end() }, this }; }
-        const_iterator end() const { return { { { this->_p.end() }, this->_p.end() }, this }; }
-        const_iterator begin() const { return { { { this->_p.begin() }, this->_p.end() }, this }; }
+        iterator end() { return { { { std::end(this->_p) }, std::end(this->_p) }, this }; }
+        iterator begin() { return { { { std::begin(this->_p) }, std::end(this->_p) }, this }; }
+        const_iterator end() const { return { { { std::end(this->_p) }, std::end(this->_p) }, this }; }
+        const_iterator begin() const { return { { { std::begin(this->_p) }, std::end(this->_p) }, this }; }
     };
 
     template <typename P2>
     struct HiShim22 : public P2 {
         using iterator = typename P2::iterator;
         using const_iterator = typename P2::const_iterator;
-        iterator end() { return { { this->_p.end(), this->_p.end(), this } }; }
-        iterator begin() { return { { this->_p.begin(), this->_p.end(), this } }; }
-        const_iterator end() const { return { { this->_p.end(), this->_p.end(), this } }; }
-        const_iterator begin() const { return { { this->_p.begin(), this->_p.end(), this } }; }
+        iterator end() { return { { std::end(this->_p), std::end(this->_p), this } }; }
+        iterator begin() { return { { std::begin(this->_p), std::end(this->_p), this } }; }
+        const_iterator end() const { return { { std::end(this->_p), std::end(this->_p), this } }; }
+        const_iterator begin() const { return { { std::begin(this->_p), std::end(this->_p), this } }; }
     };
 
     template <typename F>
@@ -181,7 +181,7 @@ struct Shim : public P {
             }
             bool _chk()
             {
-                for (; base::_i != base::_e && !_o->_f(*base::_i); ++base::_i) {
+                for (; base::_i != base::_e && !(bool)_o->_f(*base::_i); ++base::_i) {
                 }
                 return true;
             }
@@ -225,7 +225,7 @@ struct Shim : public P {
             using P2 = decltype((details::unwrap_reference_t<decltype(_f(*std::declval<I>()))>)_f(*std::declval<I>()));
             const SelectManyShim* _o = nullptr;
             details::optional<P2> _p2;
-            using I2 = decltype(_p2->begin());
+            using I2 = decltype(std::begin(_p2.value()));
             using value_type = V2;
             using pointer = std::add_pointer_t<value_type>;
             using reference = std::add_lvalue_reference_t<value_type>;
@@ -270,8 +270,8 @@ struct Shim : public P {
                         }
                     }
                     _p2.emplace((details::unwrap_reference_t<decltype(_o->_f(*this->_i))>)_o->_f(*this->_i));
-                    _i2 = _p2->begin();
-                    _e2 = _p2->end();
+                    _i2 = std::begin(_p2.value());
+                    _e2 = std::end(_p2.value());
                     _f = false;
                 }
             }
@@ -333,10 +333,10 @@ struct Shim : public P {
         using iterator = Iterator<typename base::iterator, typename P2Type::iterator>;
         using const_iterator = Iterator<typename base::const_iterator, typename P2Type::const_iterator>;
         size_t get_capacity() const { return base::get_capacity() + From(_p2).get_capacity(); }
-        iterator begin() { return { { { base::_p.begin() }, base::_p.end() }, _p2.begin() }; }
-        iterator end() { return { { { base::_p.end() }, base::_p.end() }, _p2.end(), false }; }
-        const_iterator begin() const { return { { { base::_p.begin() }, base::_p.end() }, _p2.begin() }; }
-        const_iterator end() const { return { { { base::_p.end() }, base::_p.end() }, _p2.end(), false }; }
+        iterator begin() { return { { { std::begin(base::_p) }, std::end(base::_p) }, std::begin(_p2) }; }
+        iterator end() { return { { { std::end(base::_p) }, std::end(base::_p) }, std::end(_p2), false }; }
+        const_iterator begin() const { return { { { std::begin(base::_p) }, std::end(base::_p) }, std::begin(_p2) }; }
+        const_iterator end() const { return { { { std::end(base::_p) }, std::end(base::_p) }, std::end(_p2), false }; }
     };
     template <typename P2>
     Shim<ConcatShim<P2>> Concat(P2&& p) { return Shim<ConcatShim<P2>> { { { *this }, std::forward<P2>(p) } }; }
@@ -361,7 +361,7 @@ struct Shim : public P {
             }
             bool _chk()
             {
-                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) != _o->_set.end(); ++base::_i) {
+                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) != std::end(_o->_set); ++base::_i) {
                 }
                 return true;
             }
@@ -411,7 +411,7 @@ struct Shim : public P {
             }
             bool _chk()
             {
-                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) == _o->_set.end(); ++base::_i) {
+                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) == std::end(_o->_set); ++base::_i) {
                 }
                 return true;
             }
@@ -435,12 +435,12 @@ struct Shim : public P {
     template <typename P2>
     Shim<HiShim2<IntersectShim<_IntersectFunctor>>> Intersect(P2&& p)
     {
-        return Intersect(p, _IntersectFunctor { _IntersectFunctor {} });
+        return Intersect(std::forward<P2>(p), _IntersectFunctor { _IntersectFunctor {} });
     }
     template <typename P2>
     const Shim<HiShim2<IntersectShim<_IntersectFunctor>>> Intersect(P2&& p) const
     {
-        return Intersect(p, _IntersectFunctor { _IntersectFunctor {} });
+        return Intersect(std::forward<P2>(p), _IntersectFunctor { _IntersectFunctor {} });
     }
 
     template <typename V2>
@@ -528,7 +528,7 @@ struct Shim : public P {
             }
             void _chk()
             {
-                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) != _o->_set.end(); ++base::_i) {
+                for (; base::_i != base::_e && _o->_set.find(_o->_f(*base::_i)) != std::end(_o->_set); ++base::_i) {
                 }
             }
         };
@@ -551,6 +551,41 @@ struct Shim : public P {
         return Distinct(_DistinctFunctor { _DistinctFunctor {} });
     }
 
+    struct VarShim : public LoShim {
+        using base = LoShim;
+        template <typename I>
+        struct Iterator : public LoIterator1<Iterator<I>, I> {
+            using base = LoIterator1<Iterator<I>, I>;
+            const VarShim* _o = nullptr;
+            details::optional<value_type> _v;
+            Iterator& operator++()
+            {
+                base::operator++();
+                _v.reset();
+                return *this;
+            }
+            auto operator*() -> decltype(base::operator*())
+            {
+                if (!_v.is_initialized()) {
+                    _v.emplace(base::operator*());
+                }
+                return _v.value();
+            }
+            auto operator*() const -> decltype(this->base::operator*())
+            {
+                if (!_v.is_initialized()) {
+                    _v.emplace(base::operator*());
+                }
+                return _v.value();
+            }
+        };
+        using iterator = Iterator<typename base::iterator>;
+        using value_type = typename iterator::value_type;
+        using const_iterator = Iterator<typename base::const_iterator>;
+    };
+    Shim<HiShim1<VarShim>> Var() { return Shim<HiShim1<VarShim>> { { { { *this } } } }; }
+    const Shim<HiShim1<VarShim>> Var() const { return Shim<HiShim1<VarShim>> { { { { *this } } } }; }
+
     struct _SkipFunctor {
         mutable size_t _c;
         bool operator()(const value_type&) const
@@ -571,8 +606,8 @@ struct Shim : public P {
     details::optional<VT> FirstOrNone()
     {
         auto _this = this;
-        auto ret = _this->begin();
-        if (ret == _this->end()) {
+        auto ret = std::begin(*_this);
+        if (ret == std::end(*_this)) {
             return details::optional<VT>();
         }
         return *ret;
@@ -582,39 +617,39 @@ struct Shim : public P {
     details::optional<VT> FirstOrNone() const
     {
         auto _this = this;
-        auto ret = _this->begin();
-        if (ret == _this->end()) {
+        auto ret = std::begin(*_this);
+        if (ret == std::end(*_this)) {
             return details::optional<VT>();
         }
         return *ret;
     }
 
     template <typename VT = value_type, typename F>
-    details::optional<VT> FirstOrNone(const F& f)
+    details::optional<VT> FirstOrNone(F&& f)
     {
         auto _this = this;
-        return _this->template Where(f).template FirstOrNone<VT>();
+        return _this->template Where(std::forward<F>(f)).template FirstOrNone<VT>();
     }
 
     template <typename VT = value_type>
     details::optional<VT> LastOrNone()
     {
         auto _this = this;
-        auto ret = _this->begin();
-        for (auto it = ret; it != _this->end(); ++it) {
+        auto ret = std::begin(*_this);
+        for (auto it = ret; it != std::end(*_this); ++it) {
             ret = it;
         }
-        if (ret == _this->end()) {
+        if (ret == std::end(*_this)) {
             return details::optional<VT>();
         }
         return *ret;
     }
 
     template <typename VT = value_type, typename F>
-    details::optional<VT> LastOrNone(const F& f)
+    details::optional<VT> LastOrNone(F&& f)
     {
         auto _this = this;
-        return _this->template Where(f).template LastOrNone<VT>();
+        return _this->template Where(std::forward<F>(f)).template LastOrNone<VT>();
     }
 
     template <typename VT = value_type>
@@ -638,10 +673,10 @@ struct Shim : public P {
     }
 
     template <typename VT = value_type, typename F>
-    VT First(const F& f)
+    VT First(F&& f)
     {
         auto _this = this;
-        return _this->template Where(f).template First<VT>();
+        return _this->template Where(std::forward<F>(f)).template First<VT>();
     }
 
     template <typename VT = value_type>
@@ -655,10 +690,10 @@ struct Shim : public P {
     }
 
     template <typename VT = value_type, typename F>
-    VT Last(const F& f)
+    VT Last(F&& f)
     {
         auto _this = this;
-        return _this->template Where(f).template Last<VT>();
+        return _this->template Where(std::forward<F>(f)).template Last<VT>();
     }
 
     template <typename T>
@@ -741,10 +776,10 @@ struct Shim : public P {
     }
 
     template <typename F>
-    bool Any(F f) const
+    bool Any(F&& f) const
     {
         auto _this = this;
-        return _this->Where(f).Any();
+        return _this->Where(std::forward<F>(f)).Any();
     }
 
     bool Contains(const value_type& t) const
@@ -759,7 +794,7 @@ struct Shim : public P {
     }
 
     template <typename C>
-    bool IsIntersect(C&& c) const
+    bool IsIntersect(const C& c) const
     {
         auto _this = this;
         for (const auto& it1 : *_this) {
@@ -773,7 +808,7 @@ struct Shim : public P {
     }
 
     template <typename F>
-    bool All(F f) const
+    bool All(const F& f) const
     {
         auto _this = this;
         for (const auto& it : *_this) {
@@ -838,7 +873,7 @@ struct Shim : public P {
     {
         auto _this = this;
         auto ret = _this->ToVector();
-        std::sort(ret.begin(), ret.end());
+        std::sort(std::begin(ret), std::end(ret));
         return ret;
     }
 
@@ -846,41 +881,41 @@ struct Shim : public P {
     {
         auto _this = this;
         auto ret = _this->ToVector(n);
-        std::sort(ret.begin(), ret.end());
+        std::sort(std::begin(ret), std::end(ret));
         return ret;
     }
 
     template <typename F>
-    std::vector<value_type> ToOrderedVector(F f)
+    std::vector<value_type> ToOrderedVector(const F& f)
     {
         auto _this = this;
         auto ret = _this->ToVector();
-        std::sort(ret.begin(), ret.end(), f);
+        std::sort(std::begin(ret), std::end(ret), f);
         return ret;
     }
 
     template <typename F>
-    std::vector<value_type> ToOrderedVector(F f, size_t n)
+    std::vector<value_type> ToOrderedVector(const F& f, size_t n)
     {
         auto _this = this;
         auto ret = _this->ToVector(n);
-        std::sort(ret.begin(), ret.end(), f);
+        std::sort(std::begin(ret), std::end(ret), f);
         return ret;
     }
 
     template <typename K, typename V2, typename KS, typename VS>
-    std::unordered_map<K, V2> ToUnorderedMap(KS keySelector, VS valueSelector)
+    std::unordered_map<K, V2> ToUnorderedMap(const KS& keySelector, const VS& valueSelector)
     {
         std::unordered_map<K, V2> ret;
         auto _this = this;
         for (auto&& it : *_this) {
-            valueSelector(it, ret[keySelector(it)]);
+            valueSelector(it, ret[keySelector(std::as_const(it))]);
         }
         return ret;
     }
 
     template <typename K, typename KS>
-    std::unordered_map<K, value_type> ToUnorderedMap(KS keySelector)
+    std::unordered_map<K, value_type> ToUnorderedMap(const KS& keySelector)
     {
         return ToUnorderedMap<K, value_type>(keySelector, [](const value_type& v1, value_type& v2) { v2 = v1; });
     }
@@ -899,7 +934,7 @@ struct Shim : public P {
     std::unordered_set<K> ToUnorderedSet(F&& f)
     {
         auto _this = this;
-        return _this->template Select<K>(f).ToUnorderedSet();
+        return _this->template Select<K>(std::forward<F>(f)).ToUnorderedSet();
     }
 
     std::unordered_set<value_type> ToUnorderedSet() const
@@ -916,12 +951,12 @@ struct Shim : public P {
     std::unordered_set<K> ToUnorderedSet(F&& f) const
     {
         auto _this = this;
-        return _this->template Select<K>(f).ToUnorderedSet();
+        return _this->template Select<K>(std::forward<F>(f)).ToUnorderedSet();
     }
 
     struct _MoveFunctor {
-        value_type_t operator()(value_type& v) const { return std::move(v); }
-        value_type_t operator()(value_type&& v) const { return std::move(v); }
+        template <typename VT>
+        value_type_t operator()(VT&& v) const { return std::move(v); }
     };
     Shim<HiShim11<SelectShim<value_type_t, _MoveFunctor>>> Move()
     {
@@ -936,7 +971,7 @@ template <typename P>
 struct _shared_getter {
     std::shared_ptr<P> _p;
 
-    using iterator = decltype(_p->begin());
+    using iterator = decltype(std::begin(*_p));
     using value_type = typename P::value_type;
     using const_iterator = typename P::const_iterator;
 
@@ -952,17 +987,17 @@ struct _shared_getter {
     _shared_getter& operator=(const _shared_getter&) = default;
 
     size_t get_capacity() const { return details::get_capacity(*_p); }
-    iterator end() { return _p->end(); }
-    iterator begin() { return _p->begin(); }
-    const_iterator end() const { return _p->end(); }
-    const_iterator begin() const { return _p->begin(); }
+    iterator end() { return std::end(*_p); }
+    iterator begin() { return std::begin(*_p); }
+    const_iterator end() const { return std::end(*_p); }
+    const_iterator begin() const { return std::begin(*_p); }
 };
 
 template <typename P>
 struct _shared_getter<P&> {
     P* _p = nullptr;
 
-    using iterator = decltype(_p->begin());
+    using iterator = decltype(std::begin(*_p));
     using value_type = typename P::value_type;
     using const_iterator = typename P::const_iterator;
 
@@ -984,10 +1019,10 @@ struct _shared_getter<P&> {
     _shared_getter& operator=(const _shared_getter&) = default;
 
     size_t get_capacity() const { return details::get_capacity(*_p); }
-    iterator end() { return _p->end(); }
-    iterator begin() { return _p->begin(); }
-    const_iterator end() const { return _p->end(); }
-    const_iterator begin() const { return _p->begin(); }
+    iterator end() { return std::end(*_p); }
+    iterator begin() { return std::begin(*_p); }
+    const_iterator end() const { return std::end(*_p); }
+    const_iterator begin() const { return std::begin(*_p); }
 };
 
 template <typename P>
@@ -1012,12 +1047,12 @@ struct ItShim {
     size_t get_capacity() const { return _capacity; }
 };
 
-// used only for tests!!!
+// Do not use. Used only for tests!!!
 template <typename T>
-StdShim<std::vector<T>> Move(std::initializer_list<T>&& t)
+StdShim<std::vector<T>> Move(const std::initializer_list<T>& t)
 {
     std::vector<T> vec(t.size());
-    std::move(const_cast<T*>(t.begin()), const_cast<T*>(t.end()), vec.begin());
+    std::move(const_cast<T*>(std::begin(t)), const_cast<T*>(std::end(t)), std::begin(vec));
     return linq::From(std::move(vec));
 }
 }
