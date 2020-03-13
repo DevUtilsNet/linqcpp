@@ -1,4 +1,4 @@
-//
+// https://github.com/DevUtilsNet/linqcpp
 // Copyright (C) 2018 Kapitonov Maxim
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
@@ -83,7 +83,7 @@ class ITearOffContainer;
 template <typename P>
 struct Shim : public P {
     using value_type = typename P::value_type;
-    using value_type_t = std::remove_const_t<std::remove_reference_t<value_type>>;
+    using value_type_t = std::decay_t<value_type>;
 
     template <typename I1, typename I2>
     struct LoIterator1 {
@@ -229,31 +229,31 @@ struct Shim : public P {
             using value_type = V2;
             using pointer = std::add_pointer_t<value_type>;
             using reference = std::add_lvalue_reference_t<value_type>;
-            I2 _i2;
-            I2 _e2;
-            bool _f = true;
+            details::optional<I2> _i2;
+            details::optional<I2> _e2;
+
             void _ensh() const
             {
-                if (_f) {
+                if (!_i2) {
                     const_cast<Iterator*>(this)->_chk();
                 }
             }
             Iterator& operator++()
             {
                 _ensh();
-                ++_i2;
+                ++(_i2.value());
                 _chk();
                 return *this;
             }
-            decltype(*_i2) operator*()
+            decltype(*(_i2.value())) operator*()
             {
                 _ensh();
-                return *_i2;
+                return *(_i2.value());
             }
-            decltype(*_i2) operator*() const
+            decltype(*(_i2.value())) operator*() const
             {
                 _ensh();
-                return *_i2;
+                return *(_i2.value());
             }
             bool operator==(const Iterator& i) const
             {
@@ -262,17 +262,16 @@ struct Shim : public P {
             }
             void _chk()
             {
-                for (; this->_i != this->_e && (_f || _i2 == _e2);) {
-                    if (!_f) {
+                for (; this->_i != this->_e && _i2 == _e2;) {
+                    if (_i2) {
                         ++this->_i;
                         if (this->_i == this->_e) {
                             break;
                         }
                     }
                     _p2.emplace((details::unwrap_reference_t<decltype(_o->_f(*this->_i))>)_o->_f(*this->_i));
-                    _i2 = std::begin(_p2.value());
-                    _e2 = std::end(_p2.value());
-                    _f = false;
+                    _i2.emplace(std::begin(_p2.value()));
+                    _e2.emplace(std::end(_p2.value()));
                 }
             }
         };
@@ -343,10 +342,10 @@ struct Shim : public P {
     template <typename P2>
     const Shim<ConcatShim<P2>> Concat(P2&& p) const { return Shim<ConcatShim<P2>> { { { *this }, std::forward<P2>(p) } }; }
 
-    template <typename F>
+    template <typename F, typename SetType>
     struct ExcludeShim : public LoShim {
         using base = LoShim;
-        std::unordered_set<std::result_of_t<F(value_type)>> _set;
+        SetType _set;
         F _f;
         template <typename I>
         struct Iterator : public LoIterator2<Iterator<I>, I> {
@@ -370,33 +369,33 @@ struct Shim : public P {
         using const_iterator = Iterator<typename base::const_iterator>;
     };
     template <typename P2, typename F>
-    Shim<HiShim2<ExcludeShim<F>>> Exclude(P2&& p, F&& f)
+    auto Exclude(P2&& p, F&& f) -> Shim<HiShim2<ExcludeShim<F, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Shim<HiShim2<ExcludeShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+        return Shim<HiShim2<ExcludeShim<F, decltype(From(p).ToUnorderedSet())>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
     }
     template <typename P2, typename F>
-    const Shim<HiShim2<ExcludeShim<F>>> Exclude(P2&& p, F&& f) const
+    auto Exclude(P2&& p, F&& f) const -> const Shim<HiShim2<ExcludeShim<F, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Shim<HiShim2<ExcludeShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+        return Shim<HiShim2<ExcludeShim<F, decltype(From(p).ToUnorderedSet())>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
     }
     struct _ExcludeFunctor {
-        value_type_t operator()(const value_type& v) const { return v; }
+        const value_type& operator()(const value_type& v) const { return v; }
     };
     template <typename P2>
-    Shim<HiShim2<ExcludeShim<_ExcludeFunctor>>> Exclude(P2&& p)
+    auto Exclude(P2&& p) -> Shim<HiShim2<ExcludeShim<_ExcludeFunctor, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Exclude(p, _ExcludeFunctor { _ExcludeFunctor {} });
+        return Exclude(p, _ExcludeFunctor {});
     }
     template <typename P2>
-    const Shim<HiShim2<ExcludeShim<_ExcludeFunctor>>> Exclude(P2&& p) const
+    auto Exclude(P2&& p) const -> const Shim<HiShim2<ExcludeShim<_ExcludeFunctor, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Exclude(p, _ExcludeFunctor { _ExcludeFunctor {} });
+        return Exclude(p, _ExcludeFunctor {});
     }
 
-    template <typename F>
+    template <typename F, typename SetType>
     struct IntersectShim : public LoShim {
         using base = LoShim;
-        std::unordered_set<value_type> _set;
+        SetType _set;
         F _f;
         template <typename I>
         struct Iterator : public LoIterator2<Iterator<I>, I> {
@@ -420,27 +419,27 @@ struct Shim : public P {
         using const_iterator = Iterator<typename base::const_iterator>;
     };
     template <typename P2, typename F>
-    Shim<HiShim2<IntersectShim<F>>> Intersect(P2&& p, F&& f)
+    auto Intersect(P2&& p, F&& f) -> Shim<HiShim2<IntersectShim<F, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Shim<HiShim2<IntersectShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+        return Shim<HiShim2<IntersectShim<F, decltype(From(p).ToUnorderedSet())>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
     }
     template <typename P2, typename F>
-    const Shim<HiShim2<IntersectShim<F>>> Intersect(P2&& p, F&& f) const
+    auto Intersect(P2&& p, F&& f) const -> const Shim<HiShim2<IntersectShim<F, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Shim<HiShim2<IntersectShim<F>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
+        return Shim<HiShim2<IntersectShim<F, decltype(From(p).ToUnorderedSet())>>> { { { { *this }, From(p).ToUnorderedSet(), std::forward<F>(f) } } };
     }
     struct _IntersectFunctor {
-        value_type_t operator()(const value_type& v) const { return v; }
+        const value_type& operator()(const value_type& v) const { return v; }
     };
     template <typename P2>
-    Shim<HiShim2<IntersectShim<_IntersectFunctor>>> Intersect(P2&& p)
+    auto Intersect(P2&& p) -> Shim<HiShim2<IntersectShim<_IntersectFunctor, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Intersect(std::forward<P2>(p), _IntersectFunctor { _IntersectFunctor {} });
+        return Intersect(std::forward<P2>(p), _IntersectFunctor {});
     }
     template <typename P2>
-    const Shim<HiShim2<IntersectShim<_IntersectFunctor>>> Intersect(P2&& p) const
+    auto Intersect(P2&& p) const -> const Shim<HiShim2<IntersectShim<_IntersectFunctor, decltype(From(p).ToUnorderedSet())>>>
     {
-        return Intersect(std::forward<P2>(p), _IntersectFunctor { _IntersectFunctor {} });
+        return Intersect(std::forward<P2>(p), _IntersectFunctor {});
     }
 
     template <typename V2>
@@ -544,11 +543,11 @@ struct Shim : public P {
     };
     Shim<HiShim2<DistinctShim<_DistinctFunctor>>> Distinct()
     {
-        return Distinct(_DistinctFunctor { _DistinctFunctor {} });
+        return Distinct(_DistinctFunctor {});
     }
     const Shim<HiShim2<DistinctShim<_DistinctFunctor>>> Distinct() const
     {
-        return Distinct(_DistinctFunctor { _DistinctFunctor {} });
+        return Distinct(_DistinctFunctor {});
     }
 
     struct VarShim : public LoShim {
@@ -819,44 +818,58 @@ struct Shim : public P {
         return true;
     }
 
+    template <typename T, typename O>
+    static O Copy(T* _this, O dst)
+    {
+        return std::copy(std::begin(*_this), std::end(*_this), dst);
+    }
+
+    template <typename O>
+    O Copy(O dst) { return Copy(this, dst); }
+    template <typename O>
+    O Copy(O dst) const { return Copy(this, dst); }
+
+    template <typename T>
+    static void ToList(T* _this, std::list<value_type>& l)
+    {
+        l.reserve(_this->get_capacity());
+        Copy(_this, std::inserter(l, std::begin(l)));
+    }
+
     std::list<value_type> ToList()
     {
         std::list<value_type> ret;
-        auto _this = this;
-        for (auto&& it : *_this) {
-            ret.emplace_back(it);
-        }
+        ToList(this, ret);
         return ret;
     }
 
-    void ToVector(std::vector<value_type>& v)
+    std::list<value_type> ToList() const
     {
-        auto _this = this;
-        for (auto&& it : *_this) {
-            v.emplace_back(it);
-        }
+        std::list<value_type> ret;
+        ToList(this, ret);
+        return ret;
     }
+
+    template <typename T>
+    static void ToVector(T* _this, std::vector<value_type>& v)
+    {
+        v.reserve(_this->get_capacity());
+        Copy(_this, std::inserter(v, std::begin(v)));
+    }
+
+    void ToVector(std::vector<value_type>& v) { ToVector(this, v); }
+    void ToVector(std::vector<value_type>& v) const { ToVector(this, v); }
 
     std::vector<value_type> ToVector()
     {
         std::vector<value_type> ret;
-        ret.reserve(this->get_capacity());
         ToVector(ret);
         return ret;
-    }
-
-    void ToVector(std::vector<value_type>& v) const
-    {
-        auto _this = this;
-        for (auto&& it : *_this) {
-            v.emplace_back(it);
-        }
     }
 
     std::vector<value_type> ToVector() const
     {
         std::vector<value_type> ret;
-        ret.reserve(this->get_capacity());
         ToVector(ret);
         return ret;
     }
@@ -865,7 +878,7 @@ struct Shim : public P {
     {
         std::vector<value_type> ret;
         ret.reserve(n);
-        ToVector(ret);
+        Copy(std::inserter(ret, std::begin(ret)));
         return ret;
     }
 
@@ -873,14 +886,6 @@ struct Shim : public P {
     {
         auto _this = this;
         auto ret = _this->ToVector();
-        std::sort(std::begin(ret), std::end(ret));
-        return ret;
-    }
-
-    std::vector<value_type> ToOrderedVector(size_t n)
-    {
-        auto _this = this;
-        auto ret = _this->ToVector(n);
         std::sort(std::begin(ret), std::end(ret));
         return ret;
     }
@@ -894,20 +899,12 @@ struct Shim : public P {
         return ret;
     }
 
-    template <typename F>
-    std::vector<value_type> ToOrderedVector(const F& f, size_t n)
-    {
-        auto _this = this;
-        auto ret = _this->ToVector(n);
-        std::sort(std::begin(ret), std::end(ret), f);
-        return ret;
-    }
-
     template <typename K, typename V2, typename KS, typename VS>
     std::unordered_map<K, V2> ToUnorderedMap(const KS& keySelector, const VS& valueSelector)
     {
         std::unordered_map<K, V2> ret;
         auto _this = this;
+        ret.reserve(_this->get_capacity());
         for (auto&& it : *_this) {
             valueSelector(it, ret[keySelector(std::as_const(it))]);
         }
@@ -924,6 +921,7 @@ struct Shim : public P {
     {
         std::unordered_set<value_type> ret;
         auto _this = this;
+        ret.reserve(_this->get_capacity());
         for (auto&& it : *_this) {
             ret.emplace(it);
         }
@@ -1021,8 +1019,8 @@ struct _shared_getter<P&> {
     size_t get_capacity() const { return details::get_capacity(*_p); }
     iterator end() { return std::end(*_p); }
     iterator begin() { return std::begin(*_p); }
-    const_iterator end() const { return std::end(*_p); }
-    const_iterator begin() const { return std::begin(*_p); }
+    const_iterator end() const { return std::cend(*_p); }
+    const_iterator begin() const { return std::cbegin(*_p); }
 };
 
 template <typename P>
