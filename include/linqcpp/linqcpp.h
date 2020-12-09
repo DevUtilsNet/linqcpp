@@ -550,8 +550,11 @@ struct Shim : P
          using V2 = typename std::iterator_traits< decltype( std::begin( _p2 ) ) >::reference;
 
          using reference = std::conditional_t<
-            !std::is_reference< V1 >::value && std::is_reference< V2 >::value, V1,
-            std::conditional_t< std::is_const< std::remove_reference_t< V1 > >::value, V1, V2 > >;
+            !std::is_reference< V1 >::value, V1,
+            std::conditional_t< !std::is_reference< V2 >::value, V2,
+                                std::conditional_t< std::is_const<
+                                                       std::remove_reference_t< V1 > >::value,
+                                                    V1, V2 > > >;
 
          reference operator*()
          {
@@ -1150,12 +1153,12 @@ struct Shim : P
 
    auto Sum() const
    {
-      return SumOrNone< std::decay_t<const_value_type> >( this ).value_or( std::decay_t<const_value_type>{} );
+      return SumOrNone< std::decay_t< const_value_type > >( this ).value_or( std::decay_t< const_value_type >{} );
    }
 
    auto SumOrNone() const
    {
-      return SumOrNone< std::decay_t<const_value_type> >( this );
+      return SumOrNone< std::decay_t< const_value_type > >( this );
    }
 
    template< typename VT = const_value_type >
