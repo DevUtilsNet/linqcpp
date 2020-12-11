@@ -13,3 +13,21 @@ In addition, LINQ queries offer three main advantages over traditional foreach l
 3. They can be ported to other data sources with little or no modification.
 
 In general, the more complex the operation you want to perform on the data, the more benefit you will realize by using LINQ instead of traditional iteration techniques.
+
+```
+auto result =
+      linq::From( getData() )
+         .Where( []( const T1& m ) { return !!m.result; } )
+         .Select< const T1::T3& >( []( const T1& m ) -> const T1::T3& { return *m.result; } )
+         .SelectMany< T1::T2 >( []( const T1::T3& m ) {
+            return linq::From( { m.td2 } )
+               .Concat(
+                  linq::From( m.td4 )
+                     .Select< T1::T2 >( []( const T1::T3::T4& m ) {
+                        return m.td2;
+                     } ) );
+         } )
+         .Where( []( const T1::T2& m ) { return m.v == 1; } )
+         .Select< int64_t >( []( const T1::T2& m ) { return m.v; } )
+         .FirstOrNone();
+```
