@@ -378,17 +378,14 @@ struct Shim : P
          using reference = V2;
 
          using check_type = decltype( std::declval< F >()( *base::_i ) );
-         using inner_type = decltype( *std::declval< check_type >() );
-
-         check_type _check_type;
 
          reference operator*()
          {
-            return ( details::unwrap_reference_t< inner_type > )*_check_type;
+            return *( details::unwrap_reference_t< check_type > )_o->_f( *base::_i );
          }
          reference operator*() const
          {
-            return ( details::unwrap_reference_t< inner_type > )*_check_type;
+            return *( details::unwrap_reference_t< check_type > )_o->_f( *base::_i );
          }
 
          bool _init = _chk();
@@ -402,8 +399,7 @@ struct Shim : P
          {
             for( ; base::_i != base::_e; ++base::_i )
             {
-               _check_type = check_type{ _o->_f( *base::_i ) };
-               if( !!_check_type )
+               if( !!( details::unwrap_reference_t< check_type > )_o->_f( *base::_i ) )
                {
                   break;
                }
@@ -1153,12 +1149,12 @@ struct Shim : P
 
    auto Sum() const
    {
-      return SumOrNone< std::decay_t< const_value_type > >( this ).value_or( std::decay_t< const_value_type >{} );
+      return SumOrNone< std::decay_t< value_type > >( this ).value_or( std::decay_t< value_type >{} );
    }
 
    auto SumOrNone() const
    {
-      return SumOrNone< std::decay_t< const_value_type > >( this );
+      return SumOrNone< std::decay_t< value_type > >( this );
    }
 
    template< typename VT = const_value_type >
@@ -1306,7 +1302,6 @@ struct Shim : P
    template< typename T >
    static void ToList( T* self, std::list< value_type >& l )
    {
-      l.reserve( self->get_capacity() );
       Copy( self, std::inserter( l, std::begin( l ) ) );
    }
 
@@ -1517,11 +1512,11 @@ struct _shared_getter
    {
       return std::begin( *_p );
    }
-   const_iterator end() const
+   auto end() const
    {
       return std::end( *_p );
    }
-   const_iterator begin() const
+   auto begin() const
    {
       return std::begin( *_p );
    }
@@ -1564,11 +1559,11 @@ struct _shared_getter< P& >
    {
       return std::begin( *_p );
    }
-   const_iterator end() const
+   auto end() const
    {
       return std::end( *_p );
    }
-   const_iterator begin() const
+   auto begin() const
    {
       return std::begin( *_p );
    }
