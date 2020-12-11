@@ -14,11 +14,12 @@ In addition, LINQ queries offer three main advantages over traditional foreach l
 
 In general, the more complex the operation you want to perform on the data, the more benefit you will realize by using LINQ instead of traditional iteration techniques.
 
+...
 ```
 auto result =
       linq::From( getData() )
          .Where( []( const T1& m ) { return !!m.result; } )
-         .Select< const T1::T3& >( []( const T1& m ) -> const T1::T3& { return *m.result; } )
+         .Select< const T1::T3& >( []( const T1& m ) { return std::ref( *m.result ); } )
          .SelectMany< T1::T2 >( []( const T1::T3& m ) {
             return linq::From( { m.td2 } )
                .Concat(
@@ -30,4 +31,16 @@ auto result =
          .Where( []( const T1::T2& m ) { return m.v == 1; } )
          .Select< int64_t >( []( const T1::T2& m ) { return m.v; } )
          .FirstOrNone();
+```
+...
+```
+linq::From( std::move( v ) )
+         .Where( []( const TestType& ) { return true; } )
+         .Concat( linq::From( std::vector< TestType >() ) )
+         .Select< int >( []( const TestType& t ) { return t._t; } )
+         .Concat( linq::From( std::vector< int >( { 2 } ) ) )
+         .Exclude( linq::From( std::vector< int >() ) )
+         .Exclude( linq::From( std::vector< int >( { 1 } ) ) )
+         .Exclude( linq::From( std::vector< int >( { 100 } ) ) )
+         .Sum();
 ```
