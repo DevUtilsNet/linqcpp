@@ -14,6 +14,8 @@ In addition, LINQ queries offer three main advantages over traditional foreach l
 
 In general, the more complex the operation you want to perform on the data, the more benefit you will realize by using LINQ instead of traditional iteration techniques.
 
+- [x] **True Lazy**
+- [x] **No Virtual Calls**
 ...
 ```
 auto result =
