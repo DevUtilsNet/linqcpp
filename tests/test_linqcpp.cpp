@@ -1,9 +1,177 @@
 #include <linqcpp/linqcpp.h>
 
-namespace linq::test
+namespace linq
 {
-BOOST_AUTO_TEST_SUITE( __main__ )
 BOOST_AUTO_TEST_SUITE( linqcpp )
+namespace test
+{
+namespace
+{
+template< typename T >
+std::vector< T > MoveToVector( const std::initializer_list< T >& t )
+{
+   std::vector< T > vec( t.size() );
+   std::move( const_cast< T* >( std::begin( t ) ), const_cast< T* >( std::end( t ) ), std::begin( vec ) );
+   return vec;
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE( Iterator )
+{
+   {
+      const std::vector vector{ 1 };
+      auto iterator = d::MakeIterator( d::MakeIterator( vector.begin(), vector.end() ) );
+      static_assert( std::is_same_v< decltype( *vector.begin() ), decltype( *iterator ) > );
+   }
+
+   {
+      std::vector vector{ 1, 2 };
+      auto iterator = d::MakeIterator( vector.begin(), vector.end() );
+      auto begin = d::MakeIterator( iterator );
+      auto end = d::MakeEndIterator( iterator );
+      BOOST_TEST_REQUIRE( *begin == 1 );
+      BOOST_TEST_REQUIRE( ( begin != end ) );
+
+      BOOST_TEST_REQUIRE( *begin == 1 );
+      BOOST_TEST_REQUIRE( *++begin == 2 );
+      BOOST_TEST_REQUIRE( *begin == 2 );
+      BOOST_TEST_REQUIRE( ( ++begin == end ) );
+      BOOST_TEST_REQUIRE( ( end == begin ) );
+
+      iterator = d::MakeIterator( vector.begin(), vector.end() );
+      begin = ++d::MakeIterator( iterator );
+      auto begin2 = ++d::MakeIterator( iterator );
+
+      BOOST_TEST_REQUIRE( ( begin == begin2 ) );
+   }
+
+   {
+      std::vector vector{ 1 };
+      auto iterator = d::MakeIterator( d::MakeIterator( vector.begin(), vector.end() ) );
+      *iterator = 2;
+      BOOST_TEST_REQUIRE( vector.at( 0 ) == 2 );
+   }
+
+   {
+      std::vector vector{ 1, 2, 3, 4 };
+      auto iterator = d::MakeIterator( vector.begin(), vector.end() );
+      auto collection = From( d::MakeIterator( iterator ), d::MakeEndIterator( iterator ), 4 );
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( vector.begin(), vector.end(), collection.begin(), collection.end() );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( IteratorShim )
+{
+   {
+      const std::vector vector{ 1 };
+      auto iterator = d::MakeIterator( d::MakeIteratorShim< d::optional< int > >(
+         d::MakeIterator( vector.begin(), vector.end() ),
+         []( auto&& m ) { return d::optional< int >{ m.Next().value() + 1 }; } ) );
+      BOOST_TEST_REQUIRE( *iterator == 2 );
+   }
+
+   {
+      std::vector vector{ 1 };
+      auto iterator = d::MakeIterator( d::MakeIteratorShim< d::optional< int& > >(
+         d::MakeIterator( vector.begin(), vector.end() ),
+         []( auto&& m ) { return d::optional< int& >{ m.Next().value() }; } ) );
+      BOOST_TEST_REQUIRE( *iterator == 1 );
+      *iterator = 2;
+      BOOST_TEST_REQUIRE( vector.at( 0 ) == 2 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( StdShim )
+{
+   {
+      std::vector< int > vector{ 1, 2, 3, 4, 5 };
+      auto collection = From( vector );
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( vector.begin(), vector.end(), collection.begin(), collection.end() );
+   }
+
+   {
+      const std::vector< int > vector{ 1, 2, 3, 4, 5 };
+      auto collection = From( vector );
+      std::vector< int > vector2{ 1, 2, 3, 4, 5 };
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( collection.begin(), collection.end(), vector2.begin(), vector2.end() );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( ToVector )
+{
+   {
+      std::vector< std::string > vector{ "1", "2", "3", "4", "5" };
+      auto collection = From( vector ).Where( []( auto&& m ) { return !m.empty(); } ).ToVector();
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( collection.begin(), collection.end(), vector.begin(), vector.end() );
+   }
+   {
+      const std::vector< int > vector;
+      static_assert( std::is_same_v< decltype( From( vector ).mShim.CreateIterator().Next().value() ), const int& > );
+      const std::vector< int >& vector2 = vector;
+      static_assert( std::is_same_v< decltype( From( vector2 ).mShim.CreateIterator().Next().value() ), const int& > );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( LRValue )
+{
+   {
+      auto vector{ MoveToVector( { std::make_unique< int >( 1 ) } ) };
+      BOOST_TEST_REQUIRE( *vector.at( 0 ) == 1 );
+      BOOST_TEST_REQUIRE( *From( vector ).Where( []( auto&& ) { return true; } ).mShim.CreateIterator().Next().value() == 1 );
+      *From( vector ).Where( []( auto&& ) { return true; } ).mShim.CreateIterator().Next().value() = 2;
+      BOOST_TEST_REQUIRE( *vector.at( 0 ) == 2 );
+
+      auto from = From( vector );
+      auto where = from.Select< std::unique_ptr< int >& >( []( std::unique_ptr< int >& m ) { return std::ref( m ); } );
+      BOOST_TEST_REQUIRE( *where.mShim.CreateIterator().Next().value() == 2 );
+      *where.mShim.CreateIterator().Next().value() = 3;
+      BOOST_TEST_REQUIRE( *vector.at( 0 ) == 3 );
+   }
+
+   {
+      auto vector{ MoveToVector( { std::make_unique< int >( 1 ) } ) };
+      BOOST_TEST_REQUIRE( *From( std::move( vector ) ).Where( []( auto&& ) { return true; } ).mShim.CreateIterator().Next().value() == 1 );
+   }
+
+   {
+      auto vector{ MoveToVector( { std::make_unique< int >( 1 ) } ) };
+      auto vector2 = From( std::move( vector ) ).Select< std::unique_ptr< int > >( []( std::unique_ptr< int >& m ) { return std::move( m ); } ).ToVector();
+      BOOST_TEST_REQUIRE( vector2.size() == 1 );
+      BOOST_TEST_REQUIRE( *vector2.at( 0 ) == 1 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( FromTest )
+{
+   {
+      auto collection = From( MoveToVector( { std::make_unique< int >( 1 ) } ) );
+      auto collection2 = From( std::move( collection ) );
+      collection = std::move( collection2 );
+      BOOST_TEST_REQUIRE( collection.Count() == 1 );
+      BOOST_TEST_REQUIRE( *collection.mShim.CreateIterator().Next().value() == 1 );
+   }
+
+   {
+      auto collection = From( { 1 } );
+      auto collection2 = From( collection );
+      collection2 = collection;
+      BOOST_TEST_REQUIRE( collection.Count() == 1 );
+      BOOST_TEST_REQUIRE( collection.mShim.CreateIterator().Next().value() == 1 );
+   }
+
+   {
+      From( From( MoveToVector( { std::make_unique< int >( 2 ) } ) ) );
+   }
+
+   {
+      auto container = From( { 1, 2 } );
+      auto it = container.begin();
+      auto it2 = it;
+      it2++;
+      BOOST_TEST_REQUIRE( *it == 1 );
+      BOOST_TEST_REQUIRE( *it2 == 2 );
+   }
+}
 
 struct TestType
 {
@@ -63,19 +231,19 @@ struct TestType2
    }
 };
 
-BOOST_AUTO_TEST_CASE( InitializerListTest )
+BOOST_AUTO_TEST_CASE( InitializerList )
 {
-   const auto from = linq::From( { TestType2( 1 ), TestType2( 1 ) } );
+   const auto from = From( { TestType2( 1 ), TestType2( 1 ) } );
    BOOST_REQUIRE_EQUAL( from.Sum(), 2 );
-   BOOST_REQUIRE_EQUAL( linq::From( { 1, 2, 3, 4, 5 } ).Count(), 5 );
+   BOOST_REQUIRE_EQUAL( From( { 1, 2, 3, 4, 5 } ).Count(), 5 );
 }
 
-BOOST_AUTO_TEST_CASE( ConcatTest )
+BOOST_AUTO_TEST_CASE( Concat )
 {
    {
       std::vector v1{ 1 };
       std::vector v2{ 1 };
-      auto container = linq::From( v1 ).Concat( v2 );
+      auto container = From( v1 ).Concat( v2 );
       auto it = container.begin();
       ( *it ) = 2;
       ++it;
@@ -84,34 +252,79 @@ BOOST_AUTO_TEST_CASE( ConcatTest )
       BOOST_TEST_REQUIRE( v2.at( 0 ) == 3 );
    }
 
-   BOOST_REQUIRE_EQUAL( linq::From( { 1, 2, 3, 4, 5 } ).Concat( linq::From( { 1, 2, 3, 4, 5 } ) ).Count(), 10 );
-   BOOST_REQUIRE_EQUAL( linq::From( { 1, 2, 3, 4, 5 } ).Concat( linq::From( std::vector< int >() ) ).Count(), 5 );
-   BOOST_REQUIRE_EQUAL( linq::From( std::vector< int >() ).Concat( linq::From( std::vector< int >( { 1, 2, 3, 4, 5 } ) ) ).Count(), 5 );
+   BOOST_REQUIRE_EQUAL( From( { 1, 2, 3, 4, 5 } ).Concat( std::vector< int >() ).Count(), 5 );
+   BOOST_REQUIRE_EQUAL( From( { 1, 2, 3, 4, 5 } ).Concat( From( { 1, 2, 3, 4, 5 } ) ).Count(), 10 );
+   BOOST_REQUIRE_EQUAL( From( std::vector< int >() ).Concat( From( std::vector< int >( { 1, 2, 3, 4, 5 } ) ) ).Count(), 5 );
+
+   {
+      const std::vector v1{ 1 };
+      std::vector v2{ 1 };
+      auto container1 = From( v1 ).Concat( v2 );
+      auto container2 = From( v2 ).Concat( v1 );
+
+      BOOST_TEST_REQUIRE( *container1.begin() == 1 );
+      BOOST_TEST_REQUIRE( *container2.begin() == 1 );
+   }
+
+   {
+      std::vector v1{ MoveToVector( { std::make_unique< int >( 1 ) } ) };
+      BOOST_TEST_REQUIRE( *From( v1 ).Concat( MoveToVector( { std::make_unique< int >( 2 ) } ) ).mShim.CreateIterator().Next().value() == 1 );
+   }
+
+   {
+      std::vector v1{ MoveToVector( { std::make_unique< int >( 1 ) } ) };
+      BOOST_TEST_REQUIRE( *From( v1 ).Concat( From( MoveToVector( { std::make_unique< int >( 2 ) } ) ) ).mShim.CreateIterator().Next().value() == 1 );
+   }
+
+   {
+      From( { 1 } )
+         .Concat(
+            From( { 1 } )
+               .SelectMany< int >( []( int ) {
+                  return std::vector< int >{};
+               } ) )
+         .ToVector();
+   }
 }
 
-BOOST_AUTO_TEST_CASE( ContainerTest )
+BOOST_AUTO_TEST_CASE( Container )
 {
-   BOOST_REQUIRE_EQUAL( linq::From( std::list< int >( { 1, 2, 3, 4, 5 } ) ).Count(), 5 );
-   BOOST_REQUIRE_EQUAL( linq::From( std::vector< int >( { 1, 2, 3, 4, 5 } ) ).Count(), 5 );
-   BOOST_REQUIRE_EQUAL( linq::From( linq::From( std::vector< int >( { 1, 2, 3, 4, 5 } ) ) ).Count(), 5 );
+   BOOST_REQUIRE_EQUAL( From( std::list< int >( { 1, 2, 3, 4, 5 } ) ).Count(), 5 );
+   BOOST_REQUIRE_EQUAL( From( std::vector< int >( { 1, 2, 3, 4, 5 } ) ).Count(), 5 );
+   BOOST_REQUIRE_EQUAL( From( From( std::vector< int >( { 1, 2, 3, 4, 5 } ) ) ).Count(), 5 );
 }
 
-BOOST_AUTO_TEST_CASE( WhereTest )
+BOOST_AUTO_TEST_CASE( Where )
 {
+   {
+      std::vector< int > vector{ 1, 2, 3, 4, 5 };
+      auto collection =
+         From( vector )
+            .Where( []( int m ) {
+               return m != 2;
+            } )
+            .Where( []( int m ) {
+               return m != 4;
+            } );
+
+      std::vector< int > vector2{ 1, 3, 5 };
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( collection.begin(), collection.end(), vector2.begin(), vector2.end() );
+   }
+
    auto col11 =
-      linq::From( { 1, 2, 3, 4, 5 } )
+      From( { 1, 2, 3, 4, 5 } )
          .Where( []( int i ) { return i > 3; } )
          .ToVector();
    auto col12 = { 4, 5 };
    BOOST_REQUIRE_EQUAL_COLLECTIONS( col11.begin(), col11.end(), col12.begin(), col12.end() );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( { 1, 2, 3, 4, 5 } )
+      From( { 1, 2, 3, 4, 5 } )
          .Where( []( const int& i ) { return i > 3; } )
          .Count(),
       2 );
 
-   const auto container1 = linq::From( { TestType2( 1 ), TestType2( 2 ) } );
+   const auto container1 = From( { TestType2( 1 ), TestType2( 2 ) } );
    const auto container = container1;
    auto iterator1 = container1.begin();
    auto iterator = std::move( iterator1 );
@@ -128,7 +341,7 @@ BOOST_AUTO_TEST_CASE( WhereTest )
    {
       const std::vector< int > constVector = { 1, 2, 3 };
       const auto constCont =
-         linq::From( constVector )
+         From( constVector )
             .Where( []( const int& m ) {
                return m == 2;
             } );
@@ -138,15 +351,36 @@ BOOST_AUTO_TEST_CASE( WhereTest )
 
    {
       const std::vector< int > constVector = { 1, 2, 3 };
-      auto container = linq::From( constVector ).Where( []( auto&& ) { return true; } );
+      auto container = From( constVector ).Where( []( auto&& ) { return true; } );
       BOOST_TEST_REQUIRE( ( container.begin() != container.end() ) );
+   }
+
+   {
+      auto functor = +[]( int ) { return true; };
+      From( { 1 } ).Where( functor );
    }
 }
 
-BOOST_AUTO_TEST_CASE( SelectTest )
+BOOST_AUTO_TEST_CASE( Until )
 {
+   {
+      std::vector< int > vector{ 1, 2, 3, 4, 5 };
+      auto collection =
+         From( vector )
+            .Until( []( int m ) {
+               return m == 3;
+            } );
+
+      std::vector< int > vector2{ 1, 2 };
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( vector2.begin(), vector2.end(), collection.begin(), collection.end() );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( Select )
+{
+   auto vector{ MoveToVector( { TestType{ 1 }, { 2 }, { 3 }, { 4 }, { 5 } } ) };
    BOOST_REQUIRE_EQUAL(
-      linq::Move( { TestType( 1 ), { 2 }, { 3 }, { 4 }, { 5 } } )
+      From( std::move( vector ) )
          .Select< int >( []( const TestType& s ) { return s._t; } )
          .Sum(),
       15 );
@@ -167,8 +401,8 @@ BOOST_AUTO_TEST_CASE( SelectTest )
    {
       auto ts = getData();
       BOOST_REQUIRE_EQUAL(
-         linq::From(
-            linq::From( ts )
+         From(
+            From( ts )
                .Select< int >( []( const T1& m ) {
                   return m.v;
                } )
@@ -178,13 +412,14 @@ BOOST_AUTO_TEST_CASE( SelectTest )
    }
    {
       std::vector< int > vector = { 2, 2, 3 };
-      *linq::From( vector ).Select< int& >( []( int& m ) {
-                              return std::ref( m );
-                           } )
+      *From( vector )
+          .Select< int& >( []( int& m ) {
+             return std::ref( m );
+          } )
           .begin() = 1;
 
       BOOST_TEST_REQUIRE(
-         linq::From( std::as_const( vector ) )
+         From( std::as_const( vector ) )
             .Select< const int& >( []( const int& m ) {
                return std::ref( m );
             } )
@@ -194,7 +429,7 @@ BOOST_AUTO_TEST_CASE( SelectTest )
    {
       std::vector< int > vector = { 2, 2, 3 };
       auto pvector =
-         linq::From( vector )
+         From( vector )
             .Select< int* >( []( int& m ) {
                return &m;
             } )
@@ -204,18 +439,23 @@ BOOST_AUTO_TEST_CASE( SelectTest )
 
       BOOST_TEST_REQUIRE( vector.at( 0 ) == 1 );
    }
+
+   {
+      const std::vector vector = MoveToVector( { std::make_unique< int >( 1 ) } );
+      From( vector ).Select< int >( []( const std::unique_ptr< int >& m ) { return *m; } ).ToVector();
+   }
 }
 
-BOOST_AUTO_TEST_CASE( SelectWhereTest )
+BOOST_AUTO_TEST_CASE( SelectWhere )
 {
    BOOST_REQUIRE_EQUAL(
-      linq::Move( { TestType( 1 ), { 2 } } )
+      From( MoveToVector( { TestType( 1 ), { 2 } } ) )
          .SelectWhere< int >( []( const TestType& ) { return boost::optional< int >{}; } )
          .Count(),
       0 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::Move( { TestType( 1 ), { 2 } } )
+      From( MoveToVector( { TestType( 1 ), { 2 } } ) )
          .SelectWhere< int >( []( const TestType& ) {
             int* ret = nullptr;
             return ret;
@@ -224,7 +464,7 @@ BOOST_AUTO_TEST_CASE( SelectWhereTest )
       0 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::Move( { TestType( 1 ), { 2 } } )
+      From( MoveToVector( { TestType( 1 ), { 2 } } ) )
          .SelectWhere< int >( []( const TestType& ) {
             std::unique_ptr< int > ret;
             return ret;
@@ -233,7 +473,7 @@ BOOST_AUTO_TEST_CASE( SelectWhereTest )
       0 );
 
    auto col11 =
-      linq::From( { 300, 2, 500, 4, 600 } )
+      From( { 300, 2, 500, 4, 600 } )
          .SelectWhere< char >( []( int i ) {
             if( i > 255 )
             {
@@ -248,7 +488,7 @@ BOOST_AUTO_TEST_CASE( SelectWhereTest )
    {
       std::vector< int > vector = { 2, 2, 3 };
       auto pvector =
-         linq::From( vector )
+         From( vector )
             .SelectWhere< int* >( []( int& m ) {
                return boost::optional< int* >{ &m };
             } )
@@ -258,9 +498,58 @@ BOOST_AUTO_TEST_CASE( SelectWhereTest )
 
       BOOST_TEST_REQUIRE( vector.at( 0 ) == 1 );
    }
+
+   {
+      struct Test
+      {
+         boost::optional< std::wstring > mData;
+      };
+
+      std::vector vector{ { Test{ boost::optional< std::wstring >{ L"1" } } } };
+      auto container1 =
+         From( vector )
+            .SelectWhere< std::wstring >( []( const Test& m ) {
+               return m.mData;
+            } );
+      auto it = container1.begin();
+      BOOST_TEST_REQUIRE( *it == L"1" );
+      BOOST_TEST_REQUIRE( *it == L"1" );
+
+      auto container2 =
+         From( vector )
+            .SelectWhere< std::wstring& >( []( Test& m ) {
+               return boost::optional< std::wstring& >{ m.mData.value() };
+            } );
+
+      *container2.begin() = L"2";
+      BOOST_TEST_REQUIRE( vector.at( 0 ).mData.value() == L"2" );
+
+      auto container3 =
+         From( vector )
+            .SelectWhere< std::wstring& >( []( Test& m ) {
+               return std::ref( m.mData );
+            } );
+
+      *container3.begin() = L"3";
+      BOOST_TEST_REQUIRE( vector.at( 0 ).mData.value() == L"3" );
+   }
+
+   {
+      const std::vector< int > constVector = { 1 };
+      auto count = 0;
+      auto container =
+         From( constVector )
+            .SelectWhere< int >(
+               [&]( auto&& ) {
+                  ++count;
+                  return boost::optional< int >{ 1 };
+               } )
+            .ToVector();
+      BOOST_TEST_REQUIRE( count == 1 );
+   }
 }
 
-BOOST_AUTO_TEST_CASE( FromMoveTest )
+BOOST_AUTO_TEST_CASE( FromMove )
 {
    std::vector< TestType > v( 5 );
    auto count = 0;
@@ -270,22 +559,22 @@ BOOST_AUTO_TEST_CASE( FromMoveTest )
    }
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( v )
+      From( v )
          .Where( []( const TestType& ) { return true; } )
-         .Concat( linq::From( std::vector< TestType >() ) )
+         .Concat( From( std::vector< TestType >() ) )
          .Select< int >( []( const TestType& t ) { return t._t; } )
          .Sum(),
       15 );
    BOOST_REQUIRE_EQUAL( v.size(), 5 );
 
-   auto from1 = linq::From( v ).Select< int >( []( const TestType& t ) { return t._t; } );
-   auto from2 = from1;
+   auto from1 = From( v ).Select< int >( []( const TestType& t ) { return t._t; } );
+   auto from = from1;
 
    BOOST_REQUIRE_EQUAL( from1.Sum(), 15 );
    // это не копипаст, это такой тест.
    BOOST_REQUIRE_EQUAL( from1.Sum(), 15 );
 
-   BOOST_REQUIRE_EQUAL( from2.Sum(), 15 );
+   BOOST_REQUIRE_EQUAL( from.Sum(), 15 );
 
    std::vector< int > v2( 5 );
    count = 0;
@@ -294,7 +583,7 @@ BOOST_AUTO_TEST_CASE( FromMoveTest )
       it = ++count;
    }
 
-   auto from3 = linq::From( std::move( v2 ) );
+   auto from3 = From( std::move( v2 ) );
    auto from4 = from3;
 
    BOOST_REQUIRE_EQUAL( from3.Sum(), 15 );
@@ -302,23 +591,33 @@ BOOST_AUTO_TEST_CASE( FromMoveTest )
    BOOST_REQUIRE_EQUAL( from4.Sum(), 15 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( std::move( v ) )
+      From( std::move( v ) )
          .Where( []( const TestType& ) { return true; } )
-         .Concat( linq::From( std::vector< TestType >() ) )
+         .Concat( From( std::vector< TestType >() ) )
          .Select< int >( []( const TestType& t ) { return t._t; } )
-         .Concat( linq::From( std::vector< int >( { 2 } ) ) )
-         .Exclude( linq::From( std::vector< int >() ) )
-         .Exclude( linq::From( std::vector< int >( { 1 } ) ) )
-         .Exclude( linq::From( std::vector< int >( { 100 } ) ) )
+         .Concat( From( std::vector< int >( { 2 } ) ) )
+         .Exclude( From( std::vector< int >() ) )
+         .Exclude( From( { 1 } ) )
+         .Exclude( From( std::vector< int >( { 100 } ) ) )
          .Sum(),
       16 );
    BOOST_REQUIRE_EQUAL( v.size(), 0 );
+
+   {
+      std::vector< std::string > vector{ "1", "2" };
+      From( vector )
+         .Move()
+         .ToVector();
+
+      std::vector< std::string > vector2{ "", "" };
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( vector.begin(), vector.end(), vector2.begin(), vector2.end() );
+   }
 }
 
-BOOST_AUTO_TEST_CASE( SelectManyTest )
+BOOST_AUTO_TEST_CASE( SelectMany )
 {
    BOOST_REQUIRE_EQUAL(
-      linq::From( std::vector< int >() )
+      From( std::vector< int >() )
          .SelectMany< int >( []( int ) {
             return std::vector< int >();
          } )
@@ -326,7 +625,7 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
       0 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( { std::vector< int >() } )
+      From( { std::vector< int >() } )
          .SelectMany< int >( []( const std::vector< int >& s ) {
             return s;
          } )
@@ -334,7 +633,7 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
       0 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
+      From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
          .SelectMany< int >( []( std::vector< int >& s ) {
             return s;
          } )
@@ -342,17 +641,17 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
       0 );
 
    auto v_select =
-      linq::From( { std::vector< TestType2 >( { TestType2( 1 ) } ), std::vector< TestType2 >( { TestType2( 1 ) } ) } )
+      From( { std::vector< TestType2 >( { TestType2( 1 ) } ), std::vector< TestType2 >( { TestType2( 1 ) } ) } )
          .SelectMany< TestType2 >( []( const std::vector< TestType2 >& s ) {
-            return linq::From( std::vector< TestType2 >( s ) ).Concat( std::vector< TestType2 >( { TestType2( 1 ) } ) );
+            return From( std::vector< TestType2 >( s ) ).Concat( std::vector< TestType2 >( { TestType2( 1 ) } ) );
          } )
          .Select< int >( []( const TestType2 t ) { return t._t; } )
          .ToVector();
 
-   BOOST_REQUIRE_EQUAL( linq::From( v_select ).Sum(), 4 );
+   BOOST_REQUIRE_EQUAL( From( v_select ).Sum(), 4 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( { 1 } )
+      From( { 1 } )
          .SelectMany< TestType2 >( []( int ) {
             return std::vector< TestType2 >();
          } )
@@ -360,7 +659,7 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
       0 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( { 1 } )
+      From( { 1 } )
          .SelectMany< TestType2 >( []( int i ) {
             return std::vector< TestType2 >( { TestType2( i ) } );
          } )
@@ -371,7 +670,7 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
       1 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( { 1 } )
+      From( { 1 } )
          .SelectMany< TestType2 >( []( int ) {
             struct R
             {
@@ -403,9 +702,9 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
    *v2.begin() = std::move( v1 );
 
    BOOST_REQUIRE_EQUAL(
-      linq::From( std::move( v2 ) )
+      From( std::move( v2 ) )
          .SelectMany< int >( []( const std::vector< TestType >& s ) {
-            return linq::From( s )
+            return From( s )
                .Select< int >( []( const TestType& s ) { return s._t; } )
                .ToVector();
          } )
@@ -423,12 +722,12 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
    };
 
    BOOST_TEST_REQUIRE(
-      linq::From( std::unordered_map< int, T1 >{ { 1, T1{ 1 } }, { 2, T1{ 2 } }, { 3, T1{ 1 } } } )
+      From( std::unordered_map< int, T1 >{ { 1, T1{ 1 } }, { 2, T1{ 2 } }, { 3, T1{ 1 } } } )
          .Select< const T1& >( []( const std::pair< const int, T1 >& m ) {
             return std::ref( m.second );
          } )
          .SelectMany< int >( []( const T1& t ) {
-            return linq::From( { 1 } )
+            return From( { 1 } )
                .Where( [&]( int i ) {
                   return i == t.v1;
                } )
@@ -444,7 +743,7 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
    };
 
    auto container =
-      linq::From( { T2{ { T1{ 2 }, T1{ 2 }, T1{ 3 }, T1{ 4 }, T1{ 5 } } } } )
+      From( { T2{ { T1{ 2 }, T1{ 2 }, T1{ 3 }, T1{ 4 }, T1{ 5 } } } } )
          .SelectMany< const T1& >( []( const T2& m ) -> const std::vector< T1 >& {
             return m._t1;
          } )
@@ -457,23 +756,23 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
    BOOST_REQUIRE_EQUAL( container.Sum(), 15 );
 
    BOOST_TEST_REQUIRE(
-      linq::From( { 1 } )
+      From( { 1 } )
          .SelectMany< int >( []( int ) {
-            return linq::From( { 2, 3, 4 } );
+            return From( { 2, 3, 4 } );
          } )
          .Sum() == 9 );
 
    BOOST_TEST_REQUIRE(
-      linq::From( std::vector< int >{} )
+      From( std::vector< int >{} )
          .SelectMany< int >( []( int ) {
-            return linq::From( { 2, 3, 4 } );
+            return From( { 2, 3, 4 } );
          } )
          .Sum() == 0 );
 
    BOOST_TEST_REQUIRE(
-      linq::From( { 1 } )
+      From( { 1 } )
          .SelectMany< int >( []( int ) {
-            return linq::From( { 2, 3, 4 } )
+            return From( { 2, 3, 4 } )
                .Where( []( int i ) {
                   return i != 3;
                } )
@@ -486,7 +785,7 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
    {
       auto vec = std::vector{ std::vector< int >{ 1 }, std::vector< int >{ 2 } };
       auto it =
-         linq::From( vec )
+         From( vec )
             .SelectMany< int& >( []( std::vector< int >& m ) {
                return std::ref( m );
             } )
@@ -501,9 +800,9 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
 
    {
       auto con =
-         linq::From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
+         From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
             .SelectMany< int >( []( const std::vector< int >& m ) {
-               static const auto r = linq::From( m );
+               static const auto r = From( m );
                return std::ref( r );
             } );
       BOOST_TEST_REQUIRE( ( con.begin() == con.end() ) );
@@ -511,18 +810,18 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
 
    {
       auto con =
-         linq::From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
+         From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
             .SelectMany< int >( []( const std::vector< int >& m ) {
-               return linq::From( m );
+               return From( m );
             } );
       BOOST_TEST_REQUIRE( ( con.begin() == con.end() ) );
    }
 
    {
       auto con =
-         linq::From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
+         From( std::vector{ std::vector< int >{}, std::vector< int >{} } )
             .SelectMany< int >( []( const std::vector< int >& m ) {
-               return linq::From( m ).Where( []( auto&& ) { return true; } );
+               return From( m ).Where( []( auto&& ) { return true; } );
             } );
       BOOST_TEST_REQUIRE( ( con.begin() == con.end() ) );
    }
@@ -530,7 +829,7 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
    {
       std::vector< int > vector = { 2, 2, 3 };
       auto pvector =
-         linq::From( vector )
+         From( vector )
             .SelectMany< int* >( []( int& m ) {
                return std::vector{ &m };
             } )
@@ -542,33 +841,40 @@ BOOST_AUTO_TEST_CASE( SelectManyTest )
    }
 }
 
-BOOST_AUTO_TEST_CASE( ReuseTest )
+BOOST_AUTO_TEST_CASE( Reuse )
 {
-   auto from = linq::Move( { TestType( 1 ), TestType( 1 ) } );
-   BOOST_REQUIRE_EQUAL( from.Select< int >( []( const TestType& t ) { return t._t; } ).Sum(), 2 );
+   auto from = From( { 1, 1 } );
+   BOOST_REQUIRE_EQUAL( from.Select< int >( []( const int& t ) { return t; } ).Sum(), 2 );
    // это не копипаст, это такой тест.
-   BOOST_REQUIRE_EQUAL( from.Select< int >( []( const TestType& t ) { return t._t; } ).Sum(), 2 );
+   BOOST_REQUIRE_EQUAL( from.Select< int >( []( const int& t ) { return t; } ).Sum(), 2 );
 }
 
-BOOST_AUTO_TEST_CASE( ThrottleTest )
+BOOST_AUTO_TEST_CASE( Throttle )
 {
+   {
+      BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).Throttle( 0 ).Count() == 0 );
+   }
 
-   const auto from = linq::From( { TestType2( 1 ), TestType2( 1 ) } );
+   {
+      BOOST_TEST_REQUIRE( From( std::vector< int >{} ).Throttle( 10 ).Count() == 0 );
+   }
+
+   const auto from = From( { TestType2( 1 ), TestType2( 1 ) } );
    auto count = 0;
    for( const auto& it : from.Throttle( 1 ) )
    {
-      BOOST_REQUIRE_EQUAL( linq::From( it ).Count(), 1 );
+      BOOST_REQUIRE_EQUAL( it.Count(), 1 );
       ++count;
    }
    BOOST_REQUIRE_EQUAL( count, 2 );
 
-   const auto throttle = linq::From( { 1, 2, 3, 4, 5 } ).Throttle( 2 );
+   const auto throttle = From( { 1, 2, 3, 4, 5 } ).Throttle( 2 );
    for( auto i = 0; i < 2; ++i )
    {
       auto sums =
          throttle
-            .Select< int >( []( const auto& m ) {
-               return linq::From( m ).Sum();
+            .Select< int >( []( auto&& m ) {
+               return From( std::move( m ) ).Sum();
             } )
             .ToVector();
 
@@ -578,9 +884,78 @@ BOOST_AUTO_TEST_CASE( ThrottleTest )
       BOOST_REQUIRE_EQUAL( sums[ 1 ], 7 );
       BOOST_REQUIRE_EQUAL( sums[ 2 ], 5 );
    }
+
+   {
+      for( auto&& it : From( MoveToVector( { std::make_unique< int >( 1 ), std::make_unique< int >( 2 ) } ) ).Throttle( 1 ) )
+      {
+         BOOST_REQUIRE_EQUAL( it.Count(), 1 );
+      }
+   }
+
+   {
+      const std::vector< std::string > vector{ { '1' } };
+      {
+         auto container1 = linq::From( vector ).Throttle( 2 );
+         auto it1 = container1.CreateIterator();
+         auto container2 = it1.Next().value();
+         auto it2 = container2.CreateIterator();
+         BOOST_TEST_REQUIRE( it2.Next().value() == "1" );
+         BOOST_TEST_REQUIRE( !it2.Next().is_initialized() );
+         BOOST_TEST_REQUIRE( !it1.Next().is_initialized() );
+      }
+
+      {
+         auto container1 = linq::From( vector ).Throttle( 2 );
+         auto it1 = container1.begin();
+         auto end1 = container1.end();
+         BOOST_TEST_REQUIRE( ( it1 != end1 ) );
+         auto container2 = std::move( *it1 );
+         auto it2 = container2.begin();
+         auto it3 = container2.begin();
+
+         auto end2 = container2.end();
+         BOOST_TEST_REQUIRE( ( it2 != end2 ) );
+         BOOST_TEST_REQUIRE( *it2 == "1" );
+         BOOST_TEST_REQUIRE( ( it3 != end2 ) );
+         ++it2;
+         BOOST_TEST_REQUIRE( ( it2 == end2 ) );
+         ++it1;
+         BOOST_TEST_REQUIRE( ( it1 == end1 ) );
+      }
+   }
+
+   {
+      std::vector< std::string > vector{ { '1' } };
+      {
+         auto container1 = linq::From( vector ).Throttle( 2 );
+         for( auto&& it : container1 )
+         {
+            it.First() = '2';
+         }
+         BOOST_TEST_REQUIRE( vector.at( 0 ) == "2" );
+      }
+   }
+
+   {
+      std::vector< std::string > vector{ { '1' }, { '2' }, { '3' } };
+
+      {
+         auto container1 = linq::From( vector ).Throttle( 2 );
+         auto it1 = container1.begin();
+         auto it2 = ( *it1 ).begin();
+         BOOST_TEST_REQUIRE( *it2 == "1" );
+         ++it1;
+         it2 = ( *it1 ).begin();
+         BOOST_TEST_REQUIRE( *it2 == "3" );
+         ++it2;
+         BOOST_TEST_REQUIRE( ( it2 == ( *it1 ).end() ) );
+         ++it1;
+         BOOST_TEST_REQUIRE( ( it1 == container1.end() ) );
+      }
+   }
 }
 
-BOOST_AUTO_TEST_CASE( CapacityTest )
+BOOST_AUTO_TEST_CASE( Capacity )
 {
    struct CapacityTest
    {
@@ -636,19 +1011,19 @@ BOOST_AUTO_TEST_CASE( CapacityTest )
    }
    copyCalled = 0;
 
-   auto data2 = linq::From( data ).ToVector();
+   auto data2 = From( data ).ToVector();
 
    BOOST_REQUIRE_EQUAL( copyCalled, data.size() );
 
    copyCalled = 0;
    auto expectedCopyCalled = data.size() + data2.size();
 
-   linq::From( data ).Concat( data2 ).ToVector();
+   From( data ).Concat( data2 ).ToVector();
 
    BOOST_REQUIRE_EQUAL( copyCalled, expectedCopyCalled );
 }
 
-BOOST_AUTO_TEST_CASE( ComplexTest )
+BOOST_AUTO_TEST_CASE( Complex )
 {
    struct T1
    {
@@ -686,13 +1061,13 @@ BOOST_AUTO_TEST_CASE( ComplexTest )
    };
 
    auto result =
-      linq::From( getData() )
+      From( getData() )
          .Where( []( const T1& m ) { return !!m.result; } )
          .Select< const T1::T3& >( []( const T1& m ) -> const T1::T3& { return *m.result; } )
          .SelectMany< T1::T2 >( []( const T1::T3& m ) {
-            return linq::From( { m.td2 } )
+            return From( { m.td2 } )
                .Concat(
-                  linq::From( m.td4 )
+                  From( m.td4 )
                      .Select< T1::T2 >( []( const T1::T3::T4& m ) {
                         return m.td2;
                      } ) );
@@ -705,16 +1080,16 @@ BOOST_AUTO_TEST_CASE( ComplexTest )
    BOOST_REQUIRE_EQUAL( *result, 1 );
 }
 
-BOOST_AUTO_TEST_CASE( SkipTest )
+BOOST_AUTO_TEST_CASE( Skip )
 {
-   BOOST_REQUIRE_EQUAL( linq::From( { 1, 2, 3, 4, 5 } ).Skip( 2 ).Sum(), 12 );
+   BOOST_REQUIRE_EQUAL( From( { 1, 2, 3, 4, 5 } ).Skip( 2 ).Sum(), 12 );
 }
 
-BOOST_AUTO_TEST_CASE( TakeTest )
+BOOST_AUTO_TEST_CASE( Take )
 {
-   BOOST_REQUIRE_EQUAL( linq::From( { 1, 2, 3, 4, 5 } ).Take( 2 ).Sum(), 3 );
+   BOOST_REQUIRE_EQUAL( From( { 1, 2, 3, 4, 5 } ).Take( 2 ).Sum(), 3 );
 
-   BOOST_REQUIRE_EQUAL( linq::From( { 1, 2, 3, 4, 5 } ).Skip( 2 ).Take( 2 ).Sum(), 7 );
+   BOOST_REQUIRE_EQUAL( From( { 1, 2, 3, 4, 5 } ).Skip( 2 ).Take( 2 ).Sum(), 7 );
 }
 
 // BOOST_AUTO_TEST_CASE(LinqCppAsTearOffContainerTest)
@@ -734,42 +1109,42 @@ BOOST_AUTO_TEST_CASE( TakeTest )
 //     BOOST_REQUIRE_EQUAL_COLLECTIONS(sequence1.begin(), sequence1.end(), sequence2.begin(), sequence2.end());
 // }
 
-BOOST_AUTO_TEST_CASE( DistinctTest )
+BOOST_AUTO_TEST_CASE( Distinct )
 {
    {
-      const auto col11 = linq::From( { 1, 2, 3, 4, 5 } ).Distinct();
+      const auto col11 = From( { 1, 2, 3, 4, 5 } ).Distinct();
       const auto col12 = std::vector< int >{ 1, 2, 3, 4, 5 };
       BOOST_REQUIRE_EQUAL_COLLECTIONS( col11.begin(), col11.end(), col12.begin(), col12.end() );
    }
 
    {
-      const auto col21 = linq::From( { 1, 2, 3, 3, 4, 5 } ).Distinct();
+      const auto col21 = From( { 1, 2, 3, 3, 4, 5 } ).Distinct();
       const auto col22 = std::vector< int >{ 1, 2, 3, 4, 5 };
       BOOST_REQUIRE_EQUAL_COLLECTIONS( col21.begin(), col21.end(), col22.begin(), col22.end() );
    }
 
    {
-      const auto col31 = linq::From( { 1, 2, 3, 4, 5, 5 } ).Distinct();
+      const auto col31 = From( { 1, 2, 3, 4, 5, 5 } ).Distinct();
       const auto col32 = std::vector< int >{ 1, 2, 3, 4, 5 };
       BOOST_REQUIRE_EQUAL_COLLECTIONS( col31.begin(), col31.end(), col32.begin(), col32.end() );
    }
 
    {
-      const auto col41 = linq::From( { 1, 1, 2, 3, 4, 5 } ).Distinct();
+      const auto col41 = From( { 1, 1, 2, 3, 4, 5 } ).Distinct();
       const auto col42 = std::vector< int >{ 1, 2, 3, 4, 5 };
       BOOST_REQUIRE_EQUAL_COLLECTIONS( col41.begin(), col41.end(), col42.begin(), col42.end() );
    }
 
    {
-      const auto col51 = linq::From( { 1, 1, 1, 1, 1, 1 } ).Distinct();
+      const auto col51 = From( { 1, 1, 1, 1, 1, 1 } ).Distinct();
       const auto col52 = std::vector< int >{ 1 };
       BOOST_REQUIRE_EQUAL_COLLECTIONS( col51.begin(), col51.end(), col52.begin(), col52.end() );
    }
 
    {
       std::vector col61{ 1, 2, 3, 4, 3, 3, 3 };
-      auto col62 = linq::From( col61 ).Distinct();
-      std::vector< int > col63{ col62.begin(), col62.end() };
+      auto col62 = From( col61 ).Distinct();
+      std::vector< int > col63{ col62.ToVector() };
       std::vector< int > col64 = { 1, 2, 3, 4 };
       BOOST_REQUIRE_EQUAL_COLLECTIONS( col63.begin(), col63.end(), col64.begin(), col64.end() );
    }
@@ -787,7 +1162,7 @@ BOOST_AUTO_TEST_CASE( DistinctTest )
       };
 
       auto col61 =
-         linq::From( { S{ 1, 2 }, S{ 2, 3 }, S{ 2, 3 }, S{ 3, 4 } } )
+         From( { S{ 1, 2 }, S{ 2, 3 }, S{ 2, 3 }, S{ 3, 4 } } )
             .Distinct( []( const S& m ) { return m.V1; } )
             .ToVector();
       auto col62 = std::vector< S >{ S{ 1, 2 }, S{ 2, 3 }, S{ 3, 4 } };
@@ -796,37 +1171,37 @@ BOOST_AUTO_TEST_CASE( DistinctTest )
    }
 }
 
-BOOST_AUTO_TEST_CASE( CastTest )
+BOOST_AUTO_TEST_CASE( Cast )
 {
    const std::vector< int > container = { 1, 2, 3 };
-   BOOST_TEST_REQUIRE( linq::From( container ).Cast< char >().Sum() == 6 );
+   BOOST_TEST_REQUIRE( From( container ).Cast< char >().Sum() == 6 );
 }
 
-BOOST_AUTO_TEST_CASE( IntersectTest )
+BOOST_AUTO_TEST_CASE( Intersect )
 {
    const std::vector< int > container1 = { 1, 2, 3 };
    const std::vector< int > container2 = { 4, 2, 5 };
 
-   BOOST_TEST_REQUIRE( linq::From( container1 ).Intersect( container2 ).Sum() == 2 );
+   BOOST_TEST_REQUIRE( From( container1 ).Intersect( container2 ).Sum() == 2 );
 }
 
-BOOST_AUTO_TEST_CASE( AggregateTest )
+BOOST_AUTO_TEST_CASE( Aggregate )
 {
    {
       auto a = 1;
-      BOOST_TEST_REQUIRE( linq::From( { 1, 2, 3 } ).Aggregate( a, []( int a, int m ) { return a + m; } ) == 7 );
+      BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).Aggregate( a, []( int a, int m ) { return a + m; } ) == 7 );
       BOOST_TEST_REQUIRE( a == 1 );
    }
 
    {
       const auto a = 1;
-      BOOST_TEST_REQUIRE( linq::From( std::vector< int >{} ).Aggregate( a, []( int a, int m ) { return a + m; } ) == 1 );
+      BOOST_TEST_REQUIRE( From( std::vector< int >{} ).Aggregate( a, []( int a, int m ) { return a + m; } ) == 1 );
    }
 
    {
       auto a = 1;
       BOOST_TEST_REQUIRE(
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Aggregate(
                a,
                []( int, int m ) {
@@ -838,7 +1213,7 @@ BOOST_AUTO_TEST_CASE( AggregateTest )
    {
       auto a = 1;
       BOOST_TEST_REQUIRE(
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Aggregate(
                a,
                []( int& a, int ) {
@@ -849,7 +1224,7 @@ BOOST_AUTO_TEST_CASE( AggregateTest )
    {
       auto a = 1;
       BOOST_TEST_REQUIRE(
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Aggregate(
                &a,
                []( int* a, int ) {
@@ -860,7 +1235,7 @@ BOOST_AUTO_TEST_CASE( AggregateTest )
    {
       const auto a = 1;
       BOOST_TEST_REQUIRE(
-         *linq::From( { 1, 2, 3 } )
+         *From( { 1, 2, 3 } )
              .Aggregate(
                 &a,
                 []( const int* a, const int& m ) {
@@ -870,34 +1245,35 @@ BOOST_AUTO_TEST_CASE( AggregateTest )
    }
 }
 
-BOOST_AUTO_TEST_CASE( FirstOrNoneTest )
+BOOST_AUTO_TEST_CASE( FirstOrNone )
 {
-   BOOST_TEST_REQUIRE( linq::From( { 1, 2, 3 } ).FirstOrNone( []( int m ) { return m > 2; } ).value() == 3 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).FirstOrNone( []( int m ) { return m > 2; } ).value() == 3 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).First( []( int m ) { return m > 2; } ) == 3 );
 
    {
-      auto container = linq::From( { 1, 2, 3 } );
-      linq::details::optional< const int& > v = container.FirstOrNone< const int& >();
+      auto container = From( { 1, 2, 3 } );
+      linq::d::optional< const int& > v = container.FirstOrNone< const int& >();
       BOOST_TEST_REQUIRE( v.is_initialized() );
    }
 
    {
-      auto container = linq::From( { 1, 2, 3 } );
-      linq::details::optional< int > v = container.FirstOrNone();
+      auto container = From( { 1, 2, 3 } );
+      linq::d::optional< int > v = container.FirstOrNone();
       BOOST_TEST_REQUIRE( v.is_initialized() );
    }
 
    {
       const auto container =
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Select< int >( []( int ) {
                return 5;
             } );
-      linq::details::optional< int > v = container.FirstOrNone();
+      linq::d::optional< int > v = container.FirstOrNone();
       BOOST_TEST_REQUIRE( v.is_initialized() );
    }
 
    {
-      auto container = linq::From( std::vector{ 1, 2, 3 } );
+      auto container = From( std::vector{ 1, 2, 3 } );
       auto pointer = &*container.begin();
       BOOST_TEST_REQUIRE( &container.FirstOrNone< const int& >().value() == pointer );
 
@@ -907,7 +1283,7 @@ BOOST_AUTO_TEST_CASE( FirstOrNoneTest )
 
    {
       BOOST_TEST_REQUIRE(
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Select< int >( []( int ) {
                return 5;
             } )
@@ -916,13 +1292,13 @@ BOOST_AUTO_TEST_CASE( FirstOrNoneTest )
    }
 }
 
-BOOST_AUTO_TEST_CASE( FirstTest )
+BOOST_AUTO_TEST_CASE( First )
 {
-   BOOST_TEST_REQUIRE( linq::From( { 1, 2, 3 } ).First() == 1 );
-   BOOST_TEST_REQUIRE( linq::From( { 1, 2, 3 } ).First( []( int m ) { return m > 2; } ) == 3 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).First() == 1 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).First( []( int m ) { return m > 2; } ) == 3 );
 
    {
-      auto container = linq::From( std::vector{ 1, 2, 3 } );
+      auto container = From( std::vector{ 1, 2, 3 } );
       auto pointer = &*container.begin();
       BOOST_TEST_REQUIRE( &container.First() == pointer );
 
@@ -932,7 +1308,7 @@ BOOST_AUTO_TEST_CASE( FirstTest )
 
    {
       BOOST_TEST_REQUIRE(
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Select< int >( []( int ) {
                return 5;
             } )
@@ -940,33 +1316,33 @@ BOOST_AUTO_TEST_CASE( FirstTest )
    }
 }
 
-BOOST_AUTO_TEST_CASE( LastOrNoneTest )
+BOOST_AUTO_TEST_CASE( LastOrNone )
 {
-   BOOST_TEST_REQUIRE( linq::From( { 1, 2, 3 } ).LastOrNone( []( int m ) { return m < 3; } ).value() == 2 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).LastOrNone( []( int m ) { return m < 3; } ).value() == 2 );
    {
-      auto container = linq::From( { 1, 2, 3 } );
-      linq::details::optional< const int& > v = container.LastOrNone< const int& >();
+      auto container = From( { 1, 2, 3 } );
+      linq::d::optional< const int& > v = container.LastOrNone< const int& >();
       BOOST_TEST_REQUIRE( v.is_initialized() );
    }
 
    {
-      auto container = linq::From( { 1, 2, 3 } );
-      linq::details::optional< int > v = container.LastOrNone();
+      auto container = From( { 1, 2, 3 } );
+      linq::d::optional< int > v = container.LastOrNone();
       BOOST_TEST_REQUIRE( v.is_initialized() );
    }
 
    {
       const auto container =
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Select< int >( []( int ) {
                return 5;
             } );
-      linq::details::optional< int > v = container.LastOrNone();
+      linq::d::optional< int > v = container.LastOrNone();
       BOOST_TEST_REQUIRE( v.is_initialized() );
    }
 
    {
-      auto container = linq::From( std::vector{ 1, 2, 3 } );
+      auto container = From( std::vector{ 1, 2, 3 } );
       auto pointer = &*++++container.begin();
       BOOST_TEST_REQUIRE( &container.LastOrNone< int& >().value() == pointer );
 
@@ -976,7 +1352,7 @@ BOOST_AUTO_TEST_CASE( LastOrNoneTest )
 
    {
       BOOST_TEST_REQUIRE(
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Select< int >( []( int ) {
                return 5;
             } )
@@ -985,13 +1361,13 @@ BOOST_AUTO_TEST_CASE( LastOrNoneTest )
    }
 }
 
-BOOST_AUTO_TEST_CASE( LastTest )
+BOOST_AUTO_TEST_CASE( Last )
 {
-   BOOST_TEST_REQUIRE( linq::From( { 1, 2, 3 } ).Last() == 3 );
-   BOOST_TEST_REQUIRE( linq::From( { 1, 2, 3 } ).Last( []( int m ) { return m < 3; } ) == 2 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).Last() == 3 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).LastOrNone( []( int m ) { return m < 3; } ).value() == 2 );
 
    {
-      auto container = linq::From( std::vector{ 1, 2, 3 } );
+      auto container = From( std::vector{ 1, 2, 3 } );
       auto pointer = &*++++container.begin();
       BOOST_TEST_REQUIRE( &container.Last() == pointer );
 
@@ -1001,7 +1377,7 @@ BOOST_AUTO_TEST_CASE( LastTest )
 
    {
       BOOST_TEST_REQUIRE(
-         linq::From( { 1, 2, 3 } )
+         From( { 1, 2, 3 } )
             .Select< int >( []( int ) {
                return 5;
             } )
@@ -1009,6 +1385,123 @@ BOOST_AUTO_TEST_CASE( LastTest )
    }
 }
 
+BOOST_AUTO_TEST_CASE( MinMax )
+{
+   {
+      auto container = From( { 2, 1, 3 } );
+      BOOST_TEST_REQUIRE( container.Min() == 1 );
+   }
+
+   {
+      auto container = From( { 2, 1, 3 } );
+      BOOST_TEST_REQUIRE( container.Max() == 3 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( Const )
+{
+   BOOST_TEST_REQUIRE( 0 == 0 );
+   {
+      std::vector< const int* > container;
+      static_assert( std::is_same_v< decltype( *container.begin() ), const int*& > );
+      static_assert( std::is_same_v< decltype( *From( container ).begin() ), const int*& > );
+
+      std::list< const int* > list = From( container ).ToList();
+      std::vector< const int* > vector = From( container ).ToVector();
+      boost::optional< const int* > minOrNone = From( container ).MinOrNone();
+      boost::optional< const int* > maxOrNone = From( container ).MaxOrNone();
+      boost::optional< const int* > lastOrNone = From( container ).LastOrNone();
+      boost::optional< const int* > firstOrNone = From( container ).FirstOrNone();
+      std::unordered_set< const int* > unorderedSet = From( container ).ToUnorderedSet();
+   }
+
+   {
+      const std::vector< const int* > container;
+      static_assert( std::is_same_v< decltype( *container.begin() ), const int* const& > );
+      static_assert( std::is_same_v< decltype( *From( container ).begin() ), const int* const& > );
+
+      std::list< const int* > list = From( container ).ToList();
+      std::vector< const int* > vector = From( container ).ToVector();
+      boost::optional< const int* > minOrNone = From( container ).MinOrNone();
+      boost::optional< const int* > maxOrNone = From( container ).MaxOrNone();
+      boost::optional< const int* > lastOrNone = From( container ).LastOrNone();
+      boost::optional< const int* > firstOrNone = From( container ).FirstOrNone();
+      std::unordered_set< const int* > unorderedSet = From( container ).ToUnorderedSet();
+   }
+
+   {
+      std::vector< int* > container;
+      static_assert( std::is_same_v< decltype( *container.begin() ), int*& > );
+      static_assert( std::is_same_v< decltype( *From( container ).begin() ), int*& > );
+
+      std::list< int* > list = From( container ).ToList();
+      std::vector< int* > vector = From( container ).ToVector();
+      boost::optional< int* > minOrNone = From( container ).MinOrNone();
+      boost::optional< int* > maxOrNone = From( container ).MaxOrNone();
+      boost::optional< int* > lastOrNone = From( container ).LastOrNone();
+      boost::optional< int* > firstOrNone = From( container ).FirstOrNone();
+      std::unordered_set< int* > unorderedSet = From( container ).ToUnorderedSet();
+   }
+
+   {
+      const std::vector< int* > container;
+      static_assert( std::is_same_v< decltype( *container.begin() ), int* const& > );
+      static_assert( std::is_same_v< decltype( *From( container ).begin() ), int* const& > );
+
+      std::list< int* > list = From( container ).ToList();
+      std::vector< int* > vector = From( container ).ToVector();
+      boost::optional< int* > minOrNone = From( container ).MinOrNone();
+      boost::optional< int* > maxOrNone = From( container ).MaxOrNone();
+      boost::optional< int* > lastOrNone = From( container ).LastOrNone();
+      boost::optional< int* > firstOrNone = From( container ).FirstOrNone();
+      std::unordered_set< int* > unorderedSet = From( container ).ToUnorderedSet();
+   }
+
+   {
+      const std::vector< int > container;
+      std::vector< const int* > vector = From( container ).Select< const int* >( []( const int& m ) { return &m; } ).ToVector();
+      boost::optional< const int*& > firstOrNone = From( vector ).FirstOrNone< const int*& >();
+      ( void )firstOrNone;
+   }
+
+   {
+      const std::vector< int > container;
+      std::vector< const int* > vector = From( container ).Select< const int* >( []( const int& m ) { return &m; } ).ToOrderedVector( []( auto&&, auto&& ) { return false; } );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( Contains )
+{
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).Contains( 2 ) );
+   BOOST_TEST_REQUIRE( !From( { 1, 2, 3 } ).Contains( 5 ) );
+}
+
+BOOST_AUTO_TEST_CASE( IsIntersect )
+{
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).IsIntersect( From( { 2 } ) ) );
+   BOOST_TEST_REQUIRE( !From( { 1, 2, 3 } ).IsIntersect( From( { 5 } ) ) );
+}
+
+BOOST_AUTO_TEST_CASE( ToUnorderedSet )
+{
+   auto set = From( { 1, 2, 3, 2 } ).ToUnorderedSet< size_t >( []( int m ) { return m; } );
+   BOOST_TEST_REQUIRE( From( set ).Sum() == 6 );
+}
+
+BOOST_AUTO_TEST_CASE( Optional )
+{
+   {
+      BOOST_TEST_REQUIRE( From( { boost::optional< int >{ 1 } } ).mShim.CreateIterator().Next().value().get().value() == 1 );
+      BOOST_TEST_REQUIRE( From( { boost::optional< int >{ 1 } } ).Where( []( boost::optional< int >& ) { return true; } ).mShim.CreateIterator().Next().value().get().value() == 1 );
+   }
+
+   {
+      std::vector vector{ boost::optional< int >{ 1 } };
+      From( vector ).Select< std::reference_wrapper< boost::optional< int > > >( []( boost::optional< int >& m ) { return std::ref( m ); } ).First().get().value() = 2;
+      BOOST_TEST_REQUIRE( vector.at( 0 ).value() == 2 );
+   }
+}
+
+} // namespace test
 BOOST_AUTO_TEST_SUITE_END()
-BOOST_AUTO_TEST_SUITE_END()
-} // namespace linq::test
+} // namespace linq
