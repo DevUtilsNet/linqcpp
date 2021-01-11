@@ -42,7 +42,7 @@ linq::From( std::move( v ) )
          .Select< int >( []( const TestType& t ) { return t._t; } )
          .Concat( linq::From( std::vector< int >( { 2 } ) ) )
          .Exclude( linq::From( std::vector< int >() ) )
-         .Exclude( linq::From( std::vector< int >( { 1 } ) ) )
-         .Exclude( linq::From( std::vector< int >( { 100 } ) ) )
+         .Exclude( linq::From( { 1 } ) )
+         .Exclude( linq::From( { 100 } ) )
          .Sum();
 ```
