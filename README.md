@@ -19,13 +19,13 @@ In general, the more complex the operation you want to perform on the data, the 
 ...
 ```
 auto result =
-      linq::From( getData() )
+      From( getData() )
          .Where( []( const T1& m ) { return !!m.result; } )
          .Select< const T1::T3& >( []( const T1& m ) { return std::ref( *m.result ); } )
          .SelectMany< T1::T2 >( []( const T1::T3& m ) {
-            return linq::From( { m.td2 } )
+            return From( { m.td2 } )
                .Concat(
-                  linq::From( m.td4 )
+                  From( m.td4 )
                      .Select< T1::T2 >( []( const T1::T3::T4& m ) {
                         return m.td2;
                      } ) );
@@ -36,13 +36,13 @@ auto result =
 ```
 ...
 ```
-linq::From( std::move( v ) )
+From( std::move( v ) )
          .Where( []( const TestType& ) { return true; } )
-         .Concat( linq::From( std::vector< TestType >() ) )
+         .Concat( From( std::vector< TestType >() ) )
          .Select< int >( []( const TestType& t ) { return t._t; } )
-         .Concat( { 2 } )
-         .Exclude( std::vector< int >() )
-         .Exclude( { 1 } )
-         .Exclude( { 100 } )
+         .Concat( From( { 2 } ) )
+         .Exclude( From( std::vector< int >() ) )
+         .Exclude( From( { 1 } ) )
+         .Exclude( From( { 100 } ) )
          .Sum();
 ```
