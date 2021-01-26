@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <linqcpp/linqcpp.h>
 
 namespace linq
@@ -1173,8 +1175,22 @@ BOOST_AUTO_TEST_CASE( Distinct )
 
 BOOST_AUTO_TEST_CASE( Cast )
 {
-   const std::vector< int > container = { 1, 2, 3 };
-   BOOST_TEST_REQUIRE( From( container ).Cast< char >().Sum() == 6 );
+   {
+      const std::vector< int > container = { 1, 2, 3 };
+      BOOST_TEST_REQUIRE( From( container ).Cast< char >().Sum() == 6 );
+   }
+
+   {
+      BOOST_TEST_REQUIRE( *linq::From( { std::unique_ptr< int >{ new int{ 1 } } } ).Cast< std::unique_ptr< int >& >().First() == 1 );
+   }
+
+   {
+      BOOST_TEST_REQUIRE(
+         *linq::From( { std::optional< std::unique_ptr< int > >{ std::unique_ptr< int >{ new int{ 1 } } } } )
+             .Cast< const std::optional< std::unique_ptr< int > >& >()
+             .First()
+             .value() == 1 );
+   }
 }
 
 BOOST_AUTO_TEST_CASE( Intersect )
@@ -1499,6 +1515,73 @@ BOOST_AUTO_TEST_CASE( Optional )
       std::vector vector{ boost::optional< int >{ 1 } };
       From( vector ).Select< std::reference_wrapper< boost::optional< int > > >( []( boost::optional< int >& m ) { return std::ref( m ); } ).First().get().value() = 2;
       BOOST_TEST_REQUIRE( vector.at( 0 ).value() == 2 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( Array )
+{
+   {
+      int array[] = { 1, 2, 3 };
+      From( array ).Last() = 5;
+      BOOST_TEST_REQUIRE( array[ 2 ] == 5 );
+   }
+
+   {
+      const int array2[] = { 1, 2, 3 };
+      BOOST_TEST_REQUIRE( From( array2 ).Last() == 3 );
+   }
+
+   {
+      std::optional< int > array[] = { 1, 2, 3 };
+      BOOST_TEST_REQUIRE( From( array ).Select< int >( []( const auto& m ) { return m.value(); } ).Sum() == 6 );
+   }
+
+   {
+      BOOST_TEST_REQUIRE( From( { std::optional< int >{ 1 }, { { 2 } }, { { 3 } } } ).Select< int >( []( const auto& m ) { return m.value(); } ).Sum() == 6 );
+   }
+
+   {
+      auto container = From( { std::optional< int >{ 1 }, { { 2 } }, { { 3 } } } );
+      BOOST_TEST_REQUIRE( container.Select< int >( []( const auto& m ) { return m.value(); } ).Sum() == 6 );
+   }
+
+   {
+      auto container = From( { std::optional< int >{ 1 }, { { 2 } }, { { 3 } } } );
+      BOOST_TEST_REQUIRE( container.Where( []( const auto& m ) { return m.value() > 2; } ).FirstOrNone().value().value() == 3 );
+   }
+
+   {
+      auto container = From( { std::optional< int >{ 1 }, { { 2 } }, { { 3 } } } );
+      BOOST_TEST_REQUIRE( container.First( []( auto& ) { return true; } ).value() == 1 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( Ref )
+{
+   {
+      auto container = From( { std::optional< int >{ 1 } } );
+      auto container2 = container;
+      container2.First().value() = 5;
+      BOOST_TEST_REQUIRE( container.First().value() == 1 );
+      BOOST_TEST_REQUIRE( container2.First().value() == 5 );
+   }
+
+   {
+      auto container = From( { std::optional< int >{ 1 } } );
+      auto container2 = container.Ref();
+      container2.First().value() = 5;
+      BOOST_TEST_REQUIRE( container.First().value() == 5 );
+      BOOST_TEST_REQUIRE( container2.First().value() == 5 );
+   }
+
+   {
+      auto container = From( { std::optional< int >{ 1 } } );
+      auto container2 = container.Ref();
+      auto container3 = container.Ref().Where( []( auto&& ) { return true; } );
+      container2.First().value() = 5;
+      BOOST_TEST_REQUIRE( container.First().value() == 5 );
+      BOOST_TEST_REQUIRE( container2.First().value() == 5 );
+      BOOST_TEST_REQUIRE( container3.First().value() == 5 );
    }
 }
 
