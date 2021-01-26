@@ -14,14 +14,15 @@
 
 #pragma once
 
+#include "optional.h"
+
+#include <array>
 #include <deque>
 #include <functional>
 #include <list>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-#include <boost/optional.hpp>
 
 namespace linq
 {
@@ -42,8 +43,6 @@ d::Shim< T > From( d::Shim< T > t );
 
 namespace d
 {
-template< class T >
-using optional = boost::optional< T >;
 
 template< class T >
 constexpr T UnwrapReference( T&& t )
@@ -301,7 +300,7 @@ struct Shim : ShimBase< T >
    template< class F >
    Shim< WhereShim< F > > Where( F&& f ) &&
    {
-      return { { { { { std::move( this->mShim ) } }, std::forward< F >( f ) } } };
+      return { { { { { std::forward< T >( this->mShim ) } }, std::forward< F >( f ) } } };
    }
 
    // Select
@@ -343,7 +342,7 @@ struct Shim : ShimBase< T >
    template< class V, class F >
    Shim< SelectShim< V, F > > Select( F&& f ) &&
    {
-      return { { { { { std::move( this->mShim ) } }, std::forward< F >( f ) } } };
+      return { { { { { std::forward< T >( this->mShim ) } }, std::forward< F >( f ) } } };
    }
 
    //SelectWhere
@@ -395,7 +394,7 @@ struct Shim : ShimBase< T >
    template< class V, class F >
    Shim< SelectWhereShim< V, F > > SelectWhere( F&& f ) &&
    {
-      return { { { { { std::move( this->mShim ) } }, std::forward< F >( f ) } } };
+      return { { { { { std::forward< T >( this->mShim ) } }, std::forward< F >( f ) } } };
    }
 
    // SelectMany
@@ -463,7 +462,7 @@ struct Shim : ShimBase< T >
    template< class V, class F >
    Shim< SelectManyShim< V, F > > SelectMany( F&& f ) &&
    {
-      return { { { { { std::move( this->mShim ) } }, std::forward< F >( f ) } } };
+      return { { { { { std::forward< T >( this->mShim ) } }, std::forward< F >( f ) } } };
    }
 
    // Concat
@@ -544,7 +543,7 @@ struct Shim : ShimBase< T >
    template< class T2 >
    Shim< ConcatShim< T2 > > Concat( T2&& t ) &&
    {
-      return { { { { { std::move( this->mShim ) } }, std::forward< T2 >( t ) } } };
+      return { { { { { std::forward< T >( this->mShim ) } }, std::forward< T2 >( t ) } } };
    }
 
    // ExcludeIntersect
@@ -615,7 +614,7 @@ struct Shim : ShimBase< T >
    template< typename T2, typename F >
    Shim< ExcludeIntersectShim< T2, F, true > > Exclude( T2&& t, F&& f ) &&
    {
-      return { { { std::move( this->mShim ), std::forward< T2 >( t ), std::forward< F >( f ) } } };
+      return { { { std::forward< T >( this->mShim ), std::forward< T2 >( t ), std::forward< F >( f ) } } };
    }
 
    template< typename T2 >
@@ -639,7 +638,7 @@ struct Shim : ShimBase< T >
    template< typename T2, typename F >
    Shim< ExcludeIntersectShim< T2, F, false > > Intersect( T2&& t, F&& f ) &&
    {
-      return { { { std::move( this->mShim ), std::forward< T2 >( t ), std::forward< F >( f ) } } };
+      return { { { std::forward< T >( this->mShim ), std::forward< T2 >( t ), std::forward< F >( f ) } } };
    }
 
    template< typename T2 >
@@ -658,13 +657,13 @@ struct Shim : ShimBase< T >
    template< class V >
    auto Cast() const&
    {
-      return this->template Select< V >( []( auto&& m ) { return static_cast< V >( m ); } );
+      return this->template Select< V >( []( auto&& m ) -> V { return static_cast< V >( m ); } );
    }
 
    template< class V >
    auto Cast() &&
    {
-      return std::move( *this ).template Select< V >( []( auto&& m ) { return static_cast< V >( m ); } );
+      return std::move( *this ).template Select< V >( []( auto&& m ) -> V { return static_cast< V >( m ); } );
    }
 
    // Until
@@ -716,7 +715,7 @@ struct Shim : ShimBase< T >
    template< class F >
    Shim< UntilShim< F > > Until( F&& f ) &&
    {
-      return { { { { { std::move( this->mShim ) } }, std::forward< F >( f ) } } };
+      return { { { { { std::forward< T >( this->mShim ) } }, std::forward< F >( f ) } } };
    }
 
    // Take
@@ -821,7 +820,7 @@ struct Shim : ShimBase< T >
 
    Shim< ThrottleShim > Throttle( size_t count ) &&
    {
-      return { { { { { std::move( this->mShim ) } }, count } } };
+      return { { { { { std::forward< T >( this->mShim ) } }, count } } };
    }
 
    //Distinct
@@ -845,7 +844,7 @@ struct Shim : ShimBase< T >
 
    auto Distinct() const&
    {
-      return Distinct( []( DecayValueType m ) { return m; } );
+      return this->Distinct( []( DecayValueType m ) { return m; } );
    }
 
    auto Distinct() &&
@@ -856,7 +855,7 @@ struct Shim : ShimBase< T >
    // Move
    auto Move() const&
    {
-      return Select< std::decay_t< DecayValueType > >( []( DecayValueType& m ) { return std::move( m ); } );
+      return this->Select< std::decay_t< DecayValueType > >( []( DecayValueType& m ) { return std::move( m ); } );
    }
 
    auto Move() &&
@@ -873,6 +872,20 @@ struct Shim : ShimBase< T >
    {
       return MakeIterator( this->mShim.CreateIterator() );
    }
+
+   Shim< std::add_lvalue_reference_t< T > > Ref()
+   {
+      return { { this->mShim } };
+   }
+
+   const Shim< std::add_lvalue_reference_t< T > > Ref() const
+   {
+      return { { const_cast< Shim< T >* >( this )->mShim } };
+   }
+
+   // #include <linqcpp/enumerable.h> is required
+   auto ToEnumerable() const&;
+   auto ToEnumerable() &&;
 
    template< class I >
    void StdEmplace( I i ) const
@@ -944,7 +957,7 @@ struct Shim : ShimBase< T >
    template< typename ValueType2, typename F >
    std::unordered_set< ValueType2 > ToUnorderedSet( F&& f ) const
    {
-      return Select< ValueType2 >( std::forward< F >( f ) ).ToUnorderedSet();
+      return this->Ref().template Select< ValueType2 >( std::forward< F >( f ) ).ToUnorderedSet();
    }
 
    template< typename K, typename V, typename KS, typename VS >
@@ -1032,7 +1045,7 @@ struct Shim : ShimBase< T >
    template< typename V = DecayValueType, typename F >
    optional< V > FirstOrNone( F&& f ) const
    {
-      return Where( std::forward< F >( f ) ).template FirstOrNone< V >();
+      return this->Ref().Where( std::forward< F >( f ) ).template FirstOrNone< V >();
    }
 
    ValueType First() const
@@ -1079,7 +1092,7 @@ struct Shim : ShimBase< T >
    template< typename V = DecayValueType, typename F >
    optional< V > LastOrNone( F&& f ) const
    {
-      return Where( std::forward< F >( f ) ).template LastOrNone< V >();
+      return this->Ref().Where( std::forward< F >( f ) ).template LastOrNone< V >();
    }
 
    ValueType Last() const
@@ -1195,7 +1208,7 @@ struct Shim : ShimBase< T >
    template< typename F >
    bool Any( F&& f ) const
    {
-      return Where( std::forward< F >( f ) ).Any();
+      return this->Ref().Where( std::forward< F >( f ) ).Any();
    }
 
    template< typename F >
@@ -1204,14 +1217,15 @@ struct Shim : ShimBase< T >
       return !Any( [&]( const auto& m ) { return !f( m ); } );
    }
 
-   bool Contains( const DecayValueType& t ) const
+   template< typename V >
+   bool Contains( const V& v ) const
    {
       for( auto iterator = this->mShim.CreateIterator();; )
       {
          auto result = iterator.Next();
          if( result.is_initialized() )
          {
-            if( result.value() == t )
+            if( result.value() == v )
             {
                return true;
             }
@@ -1323,9 +1337,20 @@ d::Shim< T > From( d::Shim< T > t )
    return std::move( t );
 }
 
-template< typename P >
-d::Shim< d::StdShim< std::vector< P > > > From( std::initializer_list< P > p )
+template< typename P, size_t N >
+constexpr auto From( P ( &p )[ N ] )
 {
-   return From( std::vector< P >{ std::move( p ) } );
+   return From( std::begin( p ), std::end( p ), N );
+}
+
+template< typename P, size_t N >
+constexpr d::Shim< d::StdShim< std::array< P, N > > > From( P( &&p )[ N ] )
+{
+   std::array< P, N > array;
+   for( size_t i = 0; i < N; ++i )
+   {
+      array[ i ] = std::move( p[ i ] );
+   }
+   return From( std::move( array ) );
 }
 } // namespace linq
