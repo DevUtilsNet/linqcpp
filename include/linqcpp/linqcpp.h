@@ -1048,6 +1048,23 @@ struct Shim : ShimBase< T >
       return this->Ref().Where( std::forward< F >( f ) ).template FirstOrNone< V >();
    }
 
+   template< typename V >
+   V FirstOr( V&& v ) const
+   {
+      auto result = FirstOrNone< V >();
+      if( !result.is_initialized() )
+      {
+         return std::forward< V >( v );
+      }
+      return std::move( result ).value();
+   }
+
+   template< typename F, typename V >
+   V FirstOr( F&& f, V&& v ) const
+   {
+      return this->Ref().Where( std::forward< F >( f ) ).template FirstOr( std::forward< V >( v ) );
+   }
+
    ValueType First() const
    {
       auto result = FirstOrNone< ValueType >();
@@ -1093,6 +1110,23 @@ struct Shim : ShimBase< T >
    optional< V > LastOrNone( F&& f ) const
    {
       return this->Ref().Where( std::forward< F >( f ) ).template LastOrNone< V >();
+   }
+
+   template< typename V >
+   V LastOr( V&& v ) const
+   {
+      auto result = LastOrNone< V >();
+      if( !result.is_initialized() )
+      {
+         return std::forward< V >( v );
+      }
+      return std::move( result ).value();
+   }
+
+   template< typename F, typename V >
+   V LastOr( F&& f, V&& v ) const
+   {
+      return this->Ref().Where( std::forward< F >( f ) ).template LastOr( std::forward< V >( v ) );
    }
 
    ValueType Last() const
