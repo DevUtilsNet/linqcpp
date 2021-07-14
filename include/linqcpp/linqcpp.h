@@ -1151,6 +1151,70 @@ struct Shim : ShimBase< T >
    }
 
    template< typename V = DecayValueType >
+   optional< V > SingleOrNone() const
+   {
+      optional< V > ret;
+
+      auto iterator = this->mShim.CreateIterator();
+      auto result = iterator.Next();
+      if( result.is_initialized() )
+      {
+         ret.emplace( result.value() );
+      }
+
+      if( iterator.Next().is_initialized() )
+      {
+         return {};
+      }
+
+      return ret;
+   }
+
+   template< typename V = DecayValueType, typename F >
+   optional< V > SingleOrNone( F&& f ) const
+   {
+      return this->Ref().Where( std::forward< F >( f ) ).template SingleOrNone< V >();
+   }
+
+   template< typename V >
+   V SingleOr( V&& v ) const
+   {
+      auto result = SingleOrNone< V >();
+      if( !result.is_initialized() )
+      {
+         return std::forward< V >( v );
+      }
+      return std::move( result ).value();
+   }
+
+   template< typename F, typename V >
+   V SingleOr( F&& f, V&& v ) const
+   {
+      return this->Ref().Where( std::forward< F >( f ) ).template SingleOr( std::forward< V >( v ) );
+   }
+
+   ValueType Single() const
+   {
+      auto result = SingleOrNone< ValueType >();
+      if( !result.is_initialized() )
+      {
+         throw std::out_of_range( "The element isn't found." );
+      }
+      return std::move( result ).value();
+   }
+
+   template< typename F >
+   ValueType Single( F&& f ) const
+   {
+      auto result = SingleOrNone< ValueType >( std::forward< F >( f ) );
+      if( !result.is_initialized() )
+      {
+         throw std::out_of_range( "The element isn't found." );
+      }
+      return std::move( result ).value();
+   }
+
+   template< typename V = DecayValueType >
    optional< V > MinOrNone() const
    {
       optional< V > ret;
