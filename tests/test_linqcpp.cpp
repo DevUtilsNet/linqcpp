@@ -1332,6 +1332,20 @@ BOOST_AUTO_TEST_CASE( First )
    }
 }
 
+BOOST_AUTO_TEST_CASE( FirstOr )
+{
+   {
+      BOOST_TEST_REQUIRE( From( { 1 } ).FirstOr( 2 ) == 1 );
+   }
+
+   {
+      auto container = From( { 1, 2, 3 } );
+      int i = 2;
+      container.FirstOr( i ) = 5;
+      BOOST_TEST_REQUIRE( container.First() == 5 );
+   }
+}
+
 BOOST_AUTO_TEST_CASE( LastOrNone )
 {
    BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).LastOrNone( []( int m ) { return m < 3; } ).value() == 2 );
@@ -1398,6 +1412,111 @@ BOOST_AUTO_TEST_CASE( Last )
                return 5;
             } )
             .Last() == 5 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( LastOr )
+{
+   BOOST_TEST_REQUIRE( From( { 1 } ).LastOr( 2 ) == 1 );
+
+   {
+      auto container = From( { 1, 2, 3 } );
+      int i = 2;
+      container.LastOr( i ) = 5;
+      BOOST_TEST_REQUIRE( container.Last() == 5 );
+      BOOST_TEST_REQUIRE( container.First() == 1 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( SingleOrNone )
+{
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).SingleOrNone( []( int m ) { return m < 2; } ).value() == 1 );
+   {
+      auto container = From( { 1, 2, 3 } );
+      linq::d::optional< const int& > v = container.SingleOrNone< const int& >();
+      BOOST_TEST_REQUIRE( !v.is_initialized() );
+   }
+
+   {
+      auto container = From( { 1, 2, 3 } );
+      linq::d::optional< int > v = container.SingleOrNone();
+      BOOST_TEST_REQUIRE( !v.is_initialized() );
+   }
+
+   {
+      const auto container =
+         From( { 1, 2, 3 } )
+            .Select< int >( []( int ) {
+               return 5;
+            } );
+      linq::d::optional< int > v = container.SingleOrNone();
+      BOOST_TEST_REQUIRE( !v.is_initialized() );
+   }
+
+   {
+      auto container = From( std::vector{ 1 } );
+      auto pointer = &*container.begin();
+      BOOST_TEST_REQUIRE( &container.SingleOrNone< int& >().value() == pointer );
+
+      container.SingleOrNone< int& >().value() = 5;
+      BOOST_TEST_REQUIRE( *pointer == 5 );
+   }
+
+   {
+      BOOST_TEST_REQUIRE(
+         From( { 1 } )
+            .Select< int >( []( int ) {
+               return 5;
+            } )
+            .SingleOrNone()
+            .value() == 5 );
+   }
+
+   {
+      BOOST_TEST_REQUIRE(
+         !From( { 1, 2 } )
+             .Select< int >( []( int ) {
+                return 5;
+             } )
+             .SingleOrNone()
+             .is_initialized() );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( Single )
+{
+   BOOST_TEST_REQUIRE( From( { 1 } ).Single() == 1 );
+   BOOST_TEST_REQUIRE( From( { 1, 2, 3 } ).SingleOrNone( []( int m ) { return m == 3; } ).value() == 3 );
+
+   {
+      auto container = From( std::vector{ 1 } );
+      auto pointer = &*container.begin();
+      BOOST_TEST_REQUIRE( &container.Single() == pointer );
+
+      container.Single() = 5;
+      BOOST_TEST_REQUIRE( *pointer == 5 );
+   }
+
+   {
+      BOOST_TEST_REQUIRE(
+         From( { 1 } )
+            .Select< int >( []( int ) {
+               return 5;
+            } )
+            .Single() == 5 );
+   }
+}
+
+BOOST_AUTO_TEST_CASE( SingleOr )
+{
+   BOOST_TEST_REQUIRE( From( { 1 } ).SingleOr( 2 ) == 1 );
+
+   {
+      auto container = From( { 1 } );
+      int i = 2;
+      container.SingleOr( i ) = 5;
+      BOOST_TEST_REQUIRE( container.Single() == 5 );
+      BOOST_TEST_REQUIRE( container.First() == 5 );
    }
 }
 
@@ -1584,7 +1703,6 @@ BOOST_AUTO_TEST_CASE( Ref )
       BOOST_TEST_REQUIRE( container3.First().value() == 5 );
    }
 }
-
 } // namespace test
 BOOST_AUTO_TEST_SUITE_END()
 } // namespace linq
