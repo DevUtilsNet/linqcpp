@@ -45,13 +45,28 @@ namespace d
 {
 
 template< class T >
-constexpr T UnwrapReference( T&& t )
+struct RemoveRValueReference
+{
+   using type = T;
+};
+
+template< class T >
+struct RemoveRValueReference< T&& >
+{
+   using type = T;
+};
+
+template< class T >
+using RemoveRValueReferenceT = typename RemoveRValueReference< T >::type;
+
+template< class T >
+constexpr T UnwrapReferenceV( T&& t )
 {
    return std::forward< T >( t );
 }
 
 template< class T >
-constexpr T& UnwrapReference( std::reference_wrapper< T > t )
+constexpr T& UnwrapReferenceV( std::reference_wrapper< T > t )
 {
    return t;
 }
@@ -364,9 +379,9 @@ struct Shim : ShimBase< T >
                if( result.is_initialized() )
                {
                   auto ret = const_cast< F& >( mOwner->mFunctor )( std::move( result ).value() );
-                  if( UnwrapReference( ret ) )
+                  if( UnwrapReferenceV( ret ) )
                   {
-                     return *UnwrapReference( std::move( ret ) );
+                     return *UnwrapReferenceV( std::move( ret ) );
                   }
                }
                else
@@ -410,7 +425,7 @@ struct Shim : ShimBase< T >
 
          using ManyResult = std::invoke_result_t< F, ValueType& >;
          mutable optional< ManyResult > mManyResult;
-         using ManyContainer = decltype( From( UnwrapReference( std::move( mManyResult ).value() ) ) );
+         using ManyContainer = decltype( From( UnwrapReferenceV( std::move( mManyResult ).value() ) ) );
          mutable optional< ManyContainer > mManyContainer;
          using ManyIterator = decltype( mManyContainer.value().mShim.CreateIterator() );
          mutable optional< ManyIterator > mManyIterator;
@@ -432,7 +447,7 @@ struct Shim : ShimBase< T >
                if( result.is_initialized() )
                {
                   mManyResult.emplace( const_cast< F& >( mOwner->mFunctor )( std::move( result ).value() ) );
-                  mManyContainer.emplace( From( UnwrapReference( std::move( mManyResult ).value() ) ) );
+                  mManyContainer.emplace( From( UnwrapReferenceV( std::move( mManyResult ).value() ) ) );
                   mManyIterator.emplace( mManyContainer.value().mShim.CreateIterator() );
                   continue;
                }
@@ -478,7 +493,7 @@ struct Shim : ShimBase< T >
          mutable bool mFlag = {};
 
          using RhsIterator = decltype( mOwner->mConcatContainer.mShim.CreateIterator() );
-         mutable RhsIterator mRhsIterator;
+         mutable optional< RhsIterator > mRhsIterator;
 
          using R1 = typename base::ResultType;
          using R2 = typename RhsIterator::ResultType;
@@ -503,11 +518,11 @@ struct Shim : ShimBase< T >
                   return std::move( result ).value();
                }
                mFlag = true;
-               mRhsIterator = mOwner->mConcatContainer.mShim.CreateIterator();
+               mRhsIterator.emplace( mOwner->mConcatContainer.mShim.CreateIterator() );
             }
 
             {
-               auto result = mRhsIterator.Next();
+               auto result = mRhsIterator.value().Next();
                if( result.is_initialized() )
                {
                   return std::move( result ).value();
@@ -946,6 +961,48 @@ struct Shim : ShimBase< T >
       return ret;
    }
 
+   template< size_t N, typename P = DecayValueType >
+   optional< std::array< P, N > > ToArrayOrNone() const
+   {
+      size_t i{};
+      auto t = false;
+      std::array< P, N > ret;
+      for( auto it = this->mShim.CreateIterator();; )
+      {
+         auto result = it.Next();
+         if( result.is_initialized() )
+         {
+            if( i >= N )
+            {
+               t = true;
+               break;
+            }
+
+            ret[ i++ ] = std::move( result ).value();
+         }
+         else
+         {
+            break;
+         }
+      }
+      if( t || i != N )
+      {
+         return {};
+      }
+      return ret;
+   }
+
+   template< size_t N, typename P = DecayValueType >
+   std::array< P, N > ToArray() const
+   {
+      auto result = ToArrayOrNone< N, P >();
+      if( result.is_initialized() )
+      {
+         return std::move( result ).value();
+      }
+      throw std::out_of_range( "The number of elements is not equal." );
+   }
+
    std::unordered_set< DecayValueType > ToUnorderedSet() const
    {
       std::unordered_set< DecayValueType > ret;
@@ -1096,7 +1153,7 @@ struct Shim : ShimBase< T >
          auto result = iterator.Next();
          if( result.is_initialized() )
          {
-            ret.emplace( result.value() );
+            ret.emplace( std::move( result ).value() );
          }
          else
          {
@@ -1159,7 +1216,7 @@ struct Shim : ShimBase< T >
       auto result = iterator.Next();
       if( result.is_initialized() )
       {
-         ret.emplace( result.value() );
+         ret.emplace( std::move( result ).value() );
       }
 
       if( iterator.Next().is_initialized() )
@@ -1415,6 +1472,56 @@ struct StdItShim
    };
 };
 
+template< class F, class V >
+struct FnShim
+{
+   struct FnItShim
+   {
+      using ResultType = optional< V >;
+
+      using pointer = typename ResultType::pointer_type;
+      using value_type = typename ResultType::value_type;
+      using reference = typename ResultType::reference_type;
+
+      mutable F mFn;
+
+      ResultType Next() const
+      {
+         auto ret = mFn();
+         if( UnwrapReferenceV( ret ) )
+         {
+            return *UnwrapReferenceV( std::move( ret ) );
+         }
+         return {};
+      }
+
+      bool operator==( const FnItShim& ) const
+      {
+         return false;
+      }
+   };
+
+   using Iterator = FnItShim;
+
+   size_t mCapacity;
+   F mFn;
+
+   size_t GetCapacity() const
+   {
+      return mCapacity;
+   }
+
+   Iterator CreateIterator()
+   {
+      return { mFn };
+   };
+
+   Iterator CreateIterator() const
+   {
+      return { mFn };
+   };
+};
+
 } // namespace d
 
 template< class T >
@@ -1433,6 +1540,18 @@ template< class T >
 d::Shim< T > From( d::Shim< T > t )
 {
    return std::move( t );
+}
+
+template< class V, class F >
+d::Shim< d::FnShim< F, V > > From( F f, size_t capacity )
+{
+   return { { capacity, std::move( f ) } };
+}
+
+template< class F, class V = d::RemoveRValueReferenceT< decltype( *d::UnwrapReferenceV( std::declval< std::invoke_result_t< F > >() ) ) > >
+d::Shim< d::FnShim< F, V > > From( F f, size_t capacity )
+{
+   return From< V, F >( std::move( f ), capacity );
 }
 
 template< typename P, size_t N >
