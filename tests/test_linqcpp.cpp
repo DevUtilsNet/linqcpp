@@ -1703,6 +1703,134 @@ BOOST_AUTO_TEST_CASE( Ref )
       BOOST_TEST_REQUIRE( container3.First().value() == 5 );
    }
 }
+
+BOOST_AUTO_TEST_CASE( FromFn )
+{
+   {
+      auto container = From(
+         []() {
+            return boost::optional< int >{};
+         },
+         0 );
+
+      for( auto& it : container )
+      {
+         BOOST_TEST_REQUIRE( false );
+         BOOST_TEST_REQUIRE( it == 0 );
+      }
+   }
+
+   {
+      int i = 0;
+      auto container = From< int& >(
+         [&]() {
+            return &i;
+         },
+         0 );
+
+      for( auto& it : container )
+      {
+         BOOST_TEST_REQUIRE( it == 0 );
+         it = 1;
+         BOOST_TEST_REQUIRE( i == 1 );
+         break;
+      }
+   }
+
+   {
+      int i = 0;
+      auto container = From(
+         [&]() {
+            return &i;
+         },
+         1 );
+
+      for( auto& it : container )
+      {
+         it = 1;
+         break;
+      }
+
+      BOOST_TEST_REQUIRE( i == 1 );
+   }
+
+   {
+      int i = 10;
+
+      auto container = From(
+         [&]() {
+            if( i > 0 )
+            {
+               return boost::optional< int >{ i-- };
+            }
+            return boost::optional< int >{};
+         },
+         0 );
+
+      auto j = 0;
+      for( auto& it : container )
+      {
+         ++j;
+         BOOST_TEST_REQUIRE( it != 0 );
+      }
+
+      BOOST_TEST_REQUIRE( j == 10 );
+   }
+
+   {
+      int i = 0;
+      auto container = From(
+         [&]() {
+            return &++i;
+         },
+         0 );
+
+      From( { 1, 2, 3, 4, 5 } )
+         .Concat( container )
+         .Take( 4 )
+         .ToVector();
+      BOOST_TEST_REQUIRE( i == 0 );
+
+      From( { 1, 2, 3, 4, 5 } )
+         .Concat( container )
+         .Skip( 5 )
+         .Take( 1 )
+         .ToVector();
+      BOOST_TEST_REQUIRE( i == 2 ); // in future should be i == 1
+   }
+}
+
+BOOST_AUTO_TEST_CASE( ToArray )
+{
+   {
+      std::vector< int > src = { 1, 2 };
+      auto dst =
+         linq::From( src )
+            .ToArray< 2 >();
+      BOOST_REQUIRE_EQUAL_COLLECTIONS( src.begin(), src.end(), dst.begin(), dst.end() );
+   }
+
+   {
+      std::vector< int > src = { 1 };
+      BOOST_REQUIRE_THROW(
+         linq::From( src )
+            .ToArray< 2 >(),
+         std::exception );
+   }
+
+   {
+      std::vector< int > src = { 1, 2 };
+      BOOST_REQUIRE_THROW(
+         linq::From( src )
+            .ToArray< 1 >(),
+         std::exception );
+   }
+
+   {
+      auto src = MoveToVector( { std::unique_ptr< int >{} } );
+      linq::From( src ).Move().ToArray< 1 >();
+   }
+}
 } // namespace test
 BOOST_AUTO_TEST_SUITE_END()
 } // namespace linq
