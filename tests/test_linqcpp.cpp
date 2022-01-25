@@ -30,7 +30,7 @@ BOOST_AUTO_TEST_CASE( Iterator )
       std::vector vector{ 1, 2 };
       auto iterator = d::MakeIterator( vector.begin(), vector.end() );
       auto begin = d::MakeIterator( iterator );
-      auto end = d::MakeEndIterator( iterator );
+      auto end = d::MakeEndIterator< decltype( iterator ) >();
       BOOST_TEST_REQUIRE( *begin == 1 );
       BOOST_TEST_REQUIRE( ( begin != end ) );
 
@@ -57,7 +57,7 @@ BOOST_AUTO_TEST_CASE( Iterator )
    {
       std::vector vector{ 1, 2, 3, 4 };
       auto iterator = d::MakeIterator( vector.begin(), vector.end() );
-      auto collection = From( d::MakeIterator( iterator ), d::MakeEndIterator( iterator ), 4 );
+      auto collection = From( d::MakeIterator( iterator ), d::MakeEndIterator< decltype( iterator ) >(), 4 );
       BOOST_REQUIRE_EQUAL_COLLECTIONS( vector.begin(), vector.end(), collection.begin(), collection.end() );
    }
 }
