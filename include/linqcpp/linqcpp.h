@@ -136,12 +136,12 @@ struct ItStdAdr
    using value_type = typename ResultType::value_type;
    using reference = typename ResultType::reference_type;
 
-   I mIterator;
+   optional< I > mIterator;
    mutable ResultType mResult;
 
    void EmplaceNext() const
    {
-      auto value = mIterator.Next();
+      auto value = mIterator->Next();
       if( !value.is_initialized() )
       {
          mResult.reset();
@@ -213,9 +213,9 @@ ItStdAdr< I > MakeIterator( I it )
 }
 
 template< class I >
-ItStdAdr< I > MakeEndIterator( I it )
+ItStdAdr< I > MakeEndIterator()
 {
-   return { std::move( it ) };
+   return {};
 }
 
 template< class I >
@@ -880,7 +880,7 @@ struct Shim : ShimBase< T >
 
    auto end() const
    {
-      return MakeEndIterator( this->mShim.CreateIterator() );
+      return MakeEndIterator< decltype( this->mShim.CreateIterator() ) >();
    }
 
    auto begin() const
@@ -1027,7 +1027,8 @@ struct Shim : ShimBase< T >
          auto result = it.Next();
          if( result.is_initialized() )
          {
-            valueSelector( result.value(), ret[ keySelector( std::as_const( result.value() ) ) ] );
+            auto key = keySelector( std::as_const( result.value() ) );
+            valueSelector( std::move( result ).value(), ret[ key ] );
          }
          else
          {
@@ -1483,7 +1484,7 @@ struct FnShim
       using value_type = typename ResultType::value_type;
       using reference = typename ResultType::reference_type;
 
-      mutable F mFn;
+      F& mFn;
 
       ResultType Next() const
       {
@@ -1504,7 +1505,7 @@ struct FnShim
    using Iterator = FnItShim;
 
    size_t mCapacity;
-   F mFn;
+   mutable F mFn;
 
    size_t GetCapacity() const
    {
@@ -1543,9 +1544,9 @@ d::Shim< T > From( d::Shim< T > t )
 }
 
 template< class V, class F >
-d::Shim< d::FnShim< F, V > > From( F f, size_t capacity )
+d::Shim< d::FnShim< F, V > > From( F&& f, size_t capacity )
 {
-   return { { capacity, std::move( f ) } };
+   return { { capacity, std::forward< F >( f ) } };
 }
 
 template< class F, class V = d::RemoveRValueReferenceT< decltype( *d::UnwrapReferenceV( std::declval< std::invoke_result_t< F > >() ) ) > >
