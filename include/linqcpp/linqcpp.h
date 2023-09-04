@@ -89,6 +89,18 @@ struct ReferenceTraits< const optional< T >& >
    using Type = std::reference_wrapper< const optional< T > >;
 };
 
+template< class T >
+struct ReferenceTraits< std::reference_wrapper< optional< T > > >
+{
+   using Type = optional< T >;
+};
+
+template< class T >
+struct ReferenceTraits< std::reference_wrapper< const optional< T > > >
+{
+   using Type = const optional< T >;
+};
+
 template< class I >
 struct StdItAdr
 {
@@ -99,9 +111,9 @@ struct StdItAdr
    using reference = typename std::iterator_traits< Iterator >::reference;
    using value_type = typename std::iterator_traits< Iterator >::value_type;
 
-   using Reference = typename ReferenceTraits< reference >::Type;
+   using ReferenceType = typename ReferenceTraits< reference >::Type;
 
-   using ResultType = optional< Reference >;
+   using ResultType = optional< ReferenceType >;
 
    mutable I mCur;
    I mEnd;
@@ -165,9 +177,9 @@ struct ItStdAdr
       return ret;
    }
 
-   reference operator*() const
+   decltype( auto ) operator*() const
    {
-      return mResult.value();
+      return std::move( mResult ).value();
    }
 
    bool operator==( const ItStdAdr& i ) const
@@ -260,7 +272,7 @@ struct Shim : ShimBase< T >
    using DecayT = typename base::DecayT;
 
    using ValueType = typename DecayT::Iterator::ResultType::value_type;
-   using DecayValueType = std::decay_t< ValueType >;
+   using DecayValueType = typename ReferenceTraits< std::decay_t< ValueType > >::Type;
 
    typename DecayT::Iterator CreateIterator() const
    {
@@ -334,7 +346,7 @@ struct Shim : ShimBase< T >
             auto result = this->mIterator.Next();
             if( result.is_initialized() )
             {
-               return static_cast< V >( const_cast< F& >( mOwner->mFunctor )( std::move( result ).value() ) );
+               return UnwrapReferenceV( const_cast< F& >( mOwner->mFunctor )( std::move( result ).value() ) );
             }
             return {};
          }
@@ -360,7 +372,7 @@ struct Shim : ShimBase< T >
       return { { { { { std::forward< T >( this->mShim ) } }, std::forward< F >( f ) } } };
    }
 
-   //SelectWhere
+   // SelectWhere
    template< class V, class F >
    struct SelectWhereShim : ShimBase< T >
    {
@@ -736,25 +748,25 @@ struct Shim : ShimBase< T >
    // Take
    auto Take( size_t count ) const&
    {
-      return this->Until( [count]( const auto& ) mutable { return count-- == 0; } );
+      return this->Until( [ count ]( const auto& ) mutable { return count-- == 0; } );
    }
 
    template< class F >
    auto Take( size_t count ) &&
    {
-      return std::move( *this ).Until( [count]( const auto& ) mutable { return count-- == 0; } );
+      return std::move( *this ).Until( [ count ]( const auto& ) mutable { return count-- == 0; } );
    }
 
    // Skip
    auto Skip( size_t count ) const&
    {
-      return this->Where( [count]( const auto& ) mutable { return count == 0 || count-- == 0; } );
+      return this->Where( [ count ]( const auto& ) mutable { return count == 0 || count-- == 0; } );
    }
 
    template< class F >
    auto Skip( size_t count ) &&
    {
-      return std::move( *this ).Where( [count]( const auto& ) mutable { return count == 0 || count-- == 0; } );
+      return std::move( *this ).Where( [ count ]( const auto& ) mutable { return count == 0 || count-- == 0; } );
    }
 
    // Throttle
@@ -819,7 +831,7 @@ struct Shim : ShimBase< T >
 
       size_t GetCapacity() const
       {
-         return mCount;
+         return this->mShim.GetCapacity();
       }
 
       Iterator CreateIterator() const
@@ -838,23 +850,19 @@ struct Shim : ShimBase< T >
       return { { { { { std::forward< T >( this->mShim ) } }, count } } };
    }
 
-   //Distinct
+   // Distinct
    template< class F >
    auto Distinct( F&& f ) const&
    {
       std::unordered_set< std::invoke_result_t< F, DecayValueType > > set;
-      return this->Where( [set{ std::move( set ) }, f{ std::forward< F >( f ) }]( const DecayValueType& m ) mutable {
-         return set.insert( f( m ) ).second;
-      } );
+      return this->Where( [ set{ std::move( set ) }, f{ std::forward< F >( f ) } ]( const DecayValueType& m ) mutable { return set.insert( f( m ) ).second; } );
    }
 
    template< class F >
    auto Distinct( F&& f ) &&
    {
       std::unordered_set< std::invoke_result_t< F, DecayValueType > > set;
-      return std::move( *this ).Where( [set{ std::move( set ) }, f{ std::forward< F >( f ) }]( const DecayValueType& m ) mutable {
-         return set.insert( f( m ) ).second;
-      } );
+      return std::move( *this ).Where( [ set{ std::move( set ) }, f{ std::forward< F >( f ) } ]( const DecayValueType& m ) mutable { return set.insert( f( m ) ).second; } );
    }
 
    auto Distinct() const&
@@ -1370,7 +1378,9 @@ struct Shim : ShimBase< T >
    template< typename F >
    bool All( F&& f ) const
    {
-      return !Any( [&]( const auto& m ) { return !f( m ); } );
+      auto empty = true;
+      return !Any( [ & ]( const auto& m ) { empty = false; return !f( m ); } ) ||
+             empty;
    }
 
    template< typename V >
@@ -1562,7 +1572,7 @@ constexpr auto From( P ( &p )[ N ] )
 }
 
 template< typename P, size_t N >
-constexpr d::Shim< d::StdShim< std::array< P, N > > > From( P( &&p )[ N ] )
+constexpr d::Shim< d::StdShim< std::array< P, N > > > From( P ( &&p )[ N ] )
 {
    std::array< P, N > array;
    for( size_t i = 0; i < N; ++i )
